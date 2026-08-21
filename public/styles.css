@@ -99,6 +99,33 @@ h1 {
   box-shadow: 0 12px 24px var(--shadow);
 }
 
+.team-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(62, 195, 177, 0.14), rgba(255, 122, 24, 0.12));
+  border: 1px solid rgba(62, 195, 177, 0.25);
+  color: var(--text);
+  font-weight: 700;
+}
+
+.team-banner-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+#team-banner-name {
+  font-size: 1.1rem;
+  color: var(--primary);
+  word-break: break-word;
+}
+
 .team-card {
   padding: 1rem;
   margin-bottom: 1.25rem;

@@ -15,14 +15,30 @@ const previewImage = document.getElementById('preview-image');
 const uploadStatus = document.getElementById('upload-status');
 const submitEntryButton = document.getElementById('submit-entry-button');
 const entriesContent = document.getElementById('entries-content');
+const teamBanner = document.getElementById('team-banner');
+const teamBannerName = document.getElementById('team-banner-name');
 
 let currentChallenge = null;
+
+function syncTeamBanner() {
+  const teamName = getStoredTeamName();
+  if (!teamName) {
+    teamBanner.classList.add('hidden');
+    teamBannerName.textContent = 'No team saved';
+    return;
+  }
+
+  teamBannerName.textContent = teamName;
+  teamBanner.classList.remove('hidden');
+}
 
 function setTeamName(name) {
   const cleaned = String(name || '').trim();
   localStorage.setItem(TEAM_KEY, cleaned || '');
   teamNameInput.value = cleaned;
   teamNameForm.value = cleaned;
+  syncTeamBanner();
+  return cleaned;
 }
 
 function getStoredTeamName() {
@@ -202,10 +218,33 @@ saveTeamButton.addEventListener('click', () => {
   teamNameForm.value = newName;
 });
 
+teamNameInput.addEventListener('input', () => {
+  const currentValue = teamNameInput.value.trim();
+  if (!currentValue) {
+    localStorage.removeItem(TEAM_KEY);
+    teamNameForm.value = '';
+    return;
+  }
+
+  setTeamName(currentValue);
+});
+
+teamNameForm.addEventListener('input', () => {
+  const currentValue = teamNameForm.value.trim();
+  if (!currentValue) {
+    localStorage.removeItem(TEAM_KEY);
+    teamNameInput.value = '';
+    return;
+  }
+
+  setTeamName(currentValue);
+});
+
 changeTeamButton.addEventListener('click', () => {
   localStorage.removeItem(TEAM_KEY);
   teamNameInput.value = '';
   teamNameForm.value = '';
+  syncTeamBanner();
   teamNameInput.focus();
 });
 
@@ -280,6 +319,7 @@ window.addEventListener('DOMContentLoaded', () => {
     teamNameForm.value = storedTeam;
   }
 
+  syncTeamBanner();
   bindModalClosers();
   loadChallenges();
 });
