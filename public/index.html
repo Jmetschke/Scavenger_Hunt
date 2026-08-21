@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Festival Scavenger Hunt</title>
+    <meta name="description" content="Festival scavenger hunt challenge board" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Festival</p>
+          <h1>Festival Scavenger Hunt</h1>
+        </div>
+        <nav class="top-actions">
+          <a href="/leaderboard" class="secondary-button small">Leaderboard</a>
+          <button id="change-team-button" class="secondary-button small" type="button">Change Team</button>
+        </nav>
+      </header>
+
+      <section class="team-card">
+        <label for="team-name-input" class="label">What is your name or team name?</label>
+        <div class="team-row">
+          <input id="team-name-input" type="text" maxlength="80" placeholder="The Trouble Makers" />
+          <button id="save-team-button" class="primary-button" type="button">Save</button>
+        </div>
+      </section>
+
+      <main>
+        <section id="challenge-list" class="challenge-list" aria-live="polite"></section>
+      </main>
+    </div>
+
+    <div id="submission-modal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal="true"></div>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="submission-title">
+        <div class="modal-header">
+          <h2 id="submission-title">Submit Photo</h2>
+          <button class="icon-button" type="button" data-close-modal="true" aria-label="Close modal">×</button>
+        </div>
+        <form id="submission-form" class="submission-form">
+          <input type="hidden" id="challenge-id" name="challenge_id" />
+
+          <div class="field-group">
+            <label class="label">Challenge</label>
+            <div id="submission-challenge-name" class="challenge-inline"></div>
+          </div>
+
+          <div class="field-group">
+            <label class="label" for="team-name-form">Team / Name</label>
+            <input id="team-name-form" name="team_name" type="text" maxlength="80" required />
+          </div>
+
+          <div class="field-group">
+            <label class="label" for="image-input">Photo</label>
+            <input id="image-input" name="image" type="file" accept="image/*" capture="environment" required />
+            <div id="image-preview" class="image-preview hidden">
+              <img id="preview-image" alt="Selected upload preview" />
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label class="label" for="caption-input">Caption (optional)</label>
+            <textarea id="caption-input" name="caption" maxlength="240" rows="3" placeholder="Tell us what you found..."></textarea>
+          </div>
+
+          <div id="upload-status" class="status-banner hidden" aria-live="polite"></div>
+
+          <div class="modal-actions">
+            <button type="button" class="secondary-button" data-close-modal="true">Cancel</button>
+            <button id="submit-entry-button" type="submit" class="primary-button">Submit Entry</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="entries-modal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal="true"></div>
+      <div class="modal-card large" role="dialog" aria-modal="true" aria-labelledby="entries-title">
+        <div class="modal-header">
+          <h2 id="entries-title">Entries</h2>
+          <button class="icon-button" type="button" data-close-modal="true" aria-label="Close entries dialog">×</button>
+        </div>
+        <div id="entries-content" class="entries-content"></div>
+      </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

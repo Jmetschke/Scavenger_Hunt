@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Festival Admin</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell admin-shell">
+      <header class="topbar admin-header">
+        <div>
+          <p class="eyebrow">Control Panel</p>
+          <h1>Festival Admin</h1>
+        </div>
+        <a href="/" class="secondary-button small">Public View</a>
+      </header>
+
+      <main>
+        <section id="admin-login-panel" class="panel login-panel">
+          <h2>Admin Login</h2>
+          <form id="admin-login-form" class="stack-form">
+            <label class="label" for="admin-password">Password</label>
+            <input id="admin-password" type="password" placeholder="Enter admin password" required />
+            <button type="submit" class="primary-button">Sign In</button>
+          </form>
+          <div id="admin-login-status" class="status-banner hidden" aria-live="polite"></div>
+        </section>
+
+        <section id="admin-dashboard" class="hidden">
+          <div class="admin-grid">
+            <section class="panel">
+              <h2>Manage Challenges</h2>
+              <form id="challenge-form" class="stack-form">
+                <input type="hidden" id="challenge-id" />
+
+                <label class="label" for="challenge-title">Title</label>
+                <input id="challenge-title" type="text" maxlength="120" required />
+
+                <label class="label" for="challenge-description">Description</label>
+                <textarea id="challenge-description" rows="3" maxlength="500"></textarea>
+
+                <div class="two-column">
+                  <div>
+                    <label class="label" for="challenge-points">Points</label>
+                    <input id="challenge-points" type="number" min="0" value="5" required />
+                  </div>
+                  <div>
+                    <label class="label" for="challenge-sort-order">Sort Order</label>
+                    <input id="challenge-sort-order" type="number" min="0" value="0" required />
+                  </div>
+                </div>
+
+                <label class="checkbox-row">
+                  <input id="challenge-active" type="checkbox" checked />
+                  <span>Active</span>
+                </label>
+
+                <div class="modal-actions">
+                  <button type="submit" class="primary-button">Save Challenge</button>
+                  <button type="button" id="reset-challenge-form" class="secondary-button">Clear</button>
+                </div>
+              </form>
+            </section>
+
+            <section class="panel">
+              <h2>Current Challenges</h2>
+              <div id="admin-challenges-list" class="admin-list" aria-live="polite"></div>
+            </section>
+          </div>
+
+          <section class="panel submissions-panel">
+            <h2>Submissions</h2>
+            <div id="admin-submissions-list" class="admin-submissions" aria-live="polite"></div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/admin.js"></script>
+  </body>
+</html>
