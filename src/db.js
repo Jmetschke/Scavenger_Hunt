@@ -2,20 +2,20 @@ const fs = require('fs');
 const path = require('path');
 const { createClient } = require('@libsql/client');
 
-const defaultLocalDbPath = path.join(process.cwd(), 'data', 'scavenger.db');
-const dbUrl = process.env.TURSO_DATABASE_URL || `file:${defaultLocalDbPath}`;
-const authToken = process.env.TURSO_AUTH_TOKEN || undefined;
+const defaultLocalDbUrl = `file:${path.join(process.cwd(), 'data', 'scavenger.db')}`;
+const remoteDbUrl = process.env.TURSO_DATABASE_URL || '';
+const remoteAuthToken = process.env.TURSO_AUTH_TOKEN || undefined;
 
 let client = null;
-
 let databaseReady = false;
 let databaseDetails = {
-  url: dbUrl,
+  url: remoteDbUrl || defaultLocalDbUrl,
   ready: false,
+  source: remoteDbUrl ? 'turso' : 'local',
 };
 
-function ensureLocalDataFile() {
-  if (!dbUrl.startsWith('file:')) {
+function ensureLocalDataFile(dbUrl) {
+  if (!dbUrl || !dbUrl.startsWith('file:')) {
     return;
   }
 
@@ -28,25 +28,68 @@ function ensureLocalDataFile() {
   }
 }
 
+function createLocalClient() {
+  ensureLocalDataFile(defaultLocalDbUrl);
+  return createClient({ url: defaultLocalDbUrl });
+}
+
+function createRemoteClient() {
+  if (!remoteDbUrl) {
+    return createLocalClient();
+  }
+
+  return createClient({ url: remoteDbUrl, authToken: remoteAuthToken });
+}
+
 function getClient() {
   if (!client) {
-    ensureLocalDataFile();
-    client = createClient({ url: dbUrl, authToken });
+    if (remoteDbUrl && remoteAuthToken) {
+      try {
+        client = createRemoteClient();
+        databaseDetails.url = remoteDbUrl;
+        databaseDetails.source = 'turso';
+      } catch (error) {
+        console.warn('Turso client creation failed. Falling back to local SQLite database.', error.message || error);
+        client = createLocalClient();
+        databaseDetails.url = defaultLocalDbUrl;
+        databaseDetails.source = 'local';
+      }
+    } else {
+      client = createLocalClient();
+      databaseDetails.url = defaultLocalDbUrl;
+      databaseDetails.source = 'local';
+    }
   }
+
   return client;
 }
 
 async function initDatabase() {
   try {
     const activeClient = getClient();
-    ensureLocalDataFile();
-    await activeClient.execute('SELECT 1');
+    ensureLocalDataFile(databaseDetails.url);
+
+    try {
+      await activeClient.execute('SELECT 1');
+    } catch (error) {
+      if (databaseDetails.source === 'turso') {
+        console.warn('Turso database check failed. Falling back to local SQLite database.', error.message || error);
+        client = createLocalClient();
+        databaseDetails.url = defaultLocalDbUrl;
+        databaseDetails.source = 'local';
+        await client.execute('SELECT 1');
+      } else {
+        throw error;
+      }
+    }
+
     databaseReady = true;
     databaseDetails.ready = true;
+    databaseDetails.error = undefined;
 
     const { seedChallenges } = require('./seed');
 
-    await activeClient.execute(`
+    await client.execute(`
       CREATE TABLE IF NOT EXISTS challenges (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
