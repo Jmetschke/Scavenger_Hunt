@@ -283,7 +283,7 @@ challengeForm.addEventListener('submit', async (event) => {
     title: challengeTitleInput.value.trim(),
     description: challengeDescriptionInput.value.trim(),
     points: Number(challengePointsInput.value || 0),
-    sort_order: Number(challengeSortOrderInput.value || 0),
+    sort_order: challengeSortOrderInput.value.trim() === '' ? null : Number(challengeSortOrderInput.value),
     active: challengeActiveInput.checked,
   };
 

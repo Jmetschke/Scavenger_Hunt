@@ -457,7 +457,8 @@ function createApiRouter() {
     const title = sanitizeText(req.body.title, 120);
     const description = sanitizeText(req.body.description, 500);
     const points = Number(req.body.points || 0);
-    const sortOrder = Number(req.body.sort_order || 0);
+    const hasSortOrder = req.body.sort_order !== undefined && req.body.sort_order !== null && String(req.body.sort_order).trim() !== '';
+    const sortOrder = hasSortOrder ? Number(req.body.sort_order) : null;
     const active = parseBoolean(req.body.active !== undefined ? req.body.active : true);
     const huntId = getRequestedHuntId(req);
 
@@ -473,16 +474,24 @@ function createApiRouter() {
       return res.status(400).json({ error: 'Points must be a non-negative number.' });
     }
 
+    if (hasSortOrder && (!Number.isInteger(sortOrder) || sortOrder < 1)) {
+      return res.status(400).json({ error: 'Sort order must be a positive whole number.' });
+    }
+
     try {
       const client = getClient();
       const hunt = await client.execute({ sql: 'SELECT id FROM hunts WHERE id = ?', args: [huntId] });
       if (!hunt.rows.length) return res.status(404).json({ error: 'Scavenger hunt not found.' });
+      const nextSortOrder = hasSortOrder ? sortOrder : Number((await client.execute({
+        sql: 'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_sort_order FROM challenges WHERE hunt_id = ? AND active = 1',
+        args: [huntId],
+      })).rows[0].next_sort_order);
       const result = await client.execute({
         sql: `
           INSERT INTO challenges (title, description, points, sort_order, active, hunt_id)
           VALUES (?, ?, ?, ?, ?, ?)
         `,
-        args: [title, description, points, sortOrder, active ? 1 : 0, huntId],
+        args: [title, description, points, nextSortOrder, active ? 1 : 0, huntId],
       });
 
       return res.status(201).json({ success: true, id: Number(result.lastInsertRowid), message: 'Challenge created.' });
