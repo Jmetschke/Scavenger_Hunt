@@ -73,60 +73,15 @@ function mapHunt(row) {
   };
 }
 
-async function getChallengeList() {
-  const client = getClient();
-  const challengeRows = await client.execute({
-    sql: `
-      SELECT c.*, (
-        SELECT COUNT(*) FROM submissions s WHERE s.challenge_id = c.id
-      ) as submission_count
-      FROM challenges c
-      WHERE c.active = 1
-      ORDER BY c.sort_order ASC, c.id ASC
-    `,
-  });
-
-  return challengeRows.rows.map((row) => ({
-    id: Number(row.id),
-    title: row.title,
-    description: row.description,
-    points: Number(row.points),
-    sort_order: Number(row.sort_order),
-    active: Number(row.active) === 1,
-    created_at: row.created_at,
-    submission_count: Number(row.submission_count || 0),
-  }));
-}
-
-async function getSubmissionRowsForChallenge(challengeId) {
-  const client = getClient();
-  const submissions = await client.execute({
-    sql: `
-      SELECT * FROM submissions WHERE challenge_id = ? ORDER BY submitted_at DESC
-    `,
-    args: [challengeId],
-  });
-
-  return submissions.rows.map((row) => ({
-    id: Number(row.id),
-    challenge_id: Number(row.challenge_id),
-    team_name: row.team_name,
-    image_url: row.image_url,
-    cloudinary_public_id: row.cloudinary_public_id,
-    caption: row.caption,
-    submitted_at: row.submitted_at,
-    approved: Number(row.approved) === 1,
-    points_awarded: Number(row.points_awarded || 0),
-  }));
-}
-
 function createApiRouter() {
   const router = express.Router();
 
   router.get('/api/hunts', async (req, res) => {
     try {
       const client = getClient();
-      const result = await client.execute('SELECT * FROM hunts ORDER BY active DESC, id ASC');
+      const result = await client.execute({
+        sql: `SELECT * FROM hunts ${req.query.include_inactive === 'true' ? '' : 'WHERE active = 1'} ORDER BY active DESC, id ASC`,
+      });
       return res.json(result.rows.map(mapHunt));
     } catch (error) {
       console.error('Hunt fetch failed:', error);
@@ -322,6 +277,9 @@ function createApiRouter() {
       }
 
       const huntId = getRequestedHuntId(req) || Number(challengeExists.rows[0].hunt_id);
+      if (getRequestedHuntId(req) && huntId !== Number(challengeExists.rows[0].hunt_id)) {
+        return res.status(400).json({ error: 'The selected challenge does not belong to this hunt.' });
+      }
 
       const teamName = sanitizeText(req.body.team_name || req.body.teamName, 80) || 'Anonymous Team';
       const caption = sanitizeText(req.body.caption, 240);
@@ -631,20 +589,21 @@ function createApiRouter() {
   router.put('/api/submissions/:id', requireAdmin, async (req, res) => {
     const submissionId = Number(req.params.id);
     const approved = parseBoolean(req.body.approved !== undefined ? req.body.approved : false);
-    const pointsAwarded = Number(req.body.points_awarded || 0);
+    const hasPoints = req.body.points_awarded !== undefined;
+    const pointsAwarded = hasPoints ? Number(req.body.points_awarded) : null;
 
     if (!Number.isInteger(submissionId) || submissionId <= 0) {
       return res.status(400).json({ error: 'Invalid submission ID.' });
     }
 
-    if (!Number.isFinite(pointsAwarded) || pointsAwarded < 0) {
+    if (hasPoints && (!Number.isFinite(pointsAwarded) || pointsAwarded < 0)) {
       return res.status(400).json({ error: 'Points awarded must be zero or greater.' });
     }
 
     try {
       const client = getClient();
       await client.execute({
-        sql: `UPDATE submissions SET approved = ?, points_awarded = ? WHERE id = ?`,
+        sql: `UPDATE submissions SET approved = ?, points_awarded = COALESCE(?, points_awarded) WHERE id = ?`,
         args: [approved ? 1 : 0, pointsAwarded, submissionId],
       });
 

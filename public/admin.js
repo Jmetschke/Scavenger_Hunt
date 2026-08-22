@@ -47,7 +47,7 @@ async function fetchJson(url, options = {}) {
 
 async function loadAdminDashboard() {
   try {
-    hunts = await fetchJson('/api/hunts');
+    hunts = await fetchJson('/api/hunts?include_inactive=true');
     if (!selectedHuntId || !hunts.some((hunt) => hunt.id === selectedHuntId)) selectedHuntId = hunts[0]?.id;
     challengeHuntInput.innerHTML = hunts.map((hunt) => `<option value="${hunt.id}">${hunt.name}</option>`).join('');
     challengeHuntInput.value = String(selectedHuntId || '');
@@ -224,7 +224,7 @@ async function updateSubmissionApproval(submissionId, approved) {
   try {
     await fetchJson(`/api/submissions/${submissionId}`, {
       method: 'PUT',
-      body: JSON.stringify({ approved, points_awarded: 0 }),
+      body: JSON.stringify({ approved }),
     });
     loadAdminDashboard();
   } catch (error) {
@@ -262,7 +262,7 @@ challengeForm.addEventListener('submit', async (event) => {
   event.preventDefault();
 
   const payload = {
-  hunt_id: Number(challengeHuntInput.value),
+    hunt_id: Number(challengeHuntInput.value),
     title: challengeTitleInput.value.trim(),
     description: challengeDescriptionInput.value.trim(),
     points: Number(challengePointsInput.value || 0),

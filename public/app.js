@@ -21,7 +21,6 @@ const entriesContent = document.getElementById('entries-content');
 const teamBanner = document.getElementById('team-banner');
 const teamBannerName = document.getElementById('team-banner-name');
 
-let currentChallenge = null;
 let currentHuntId = null;
 let availableHunts = [];
 
@@ -159,7 +158,6 @@ async function openSubmitModal(challengeId) {
       throw new Error('Challenge not found.');
     }
 
-    currentChallenge = challenge;
     challengeIdInput.value = String(challenge.id);
     challengeNameEl.textContent = challenge.title;
     teamNameForm.value = getStoredTeamName();
