@@ -28,6 +28,15 @@
         </section>
 
         <section id="admin-dashboard" class="hidden">
+          <section class="current-hunt-banner" aria-live="polite">
+            <div>
+              <p class="eyebrow">Currently editing</p>
+              <h2 id="current-hunt-name">Select a scavenger hunt</h2>
+              <p id="current-hunt-description" class="current-hunt-description"></p>
+            </div>
+            <span id="current-hunt-status" class="hunt-status"></span>
+          </section>
+
           <section class="panel hunt-admin-panel">
             <h2>Manage Scavenger Hunts</h2>
             <form id="hunt-form" class="stack-form">
@@ -43,7 +52,7 @@
 
           <div class="admin-grid">
             <section class="panel">
-              <h2>Manage Challenges</h2>
+              <h2>Challenges for <span class="section-hunt-name"></span></h2>
               <form id="challenge-form" class="stack-form">
                 <input type="hidden" id="challenge-id" />
                 <label class="label" for="challenge-hunt">Hunt</label>
@@ -85,7 +94,7 @@
           </div>
 
           <section class="panel submissions-panel">
-            <h2>Submissions</h2>
+            <h2>Submissions for <span class="section-hunt-name"></span></h2>
             <div id="admin-submissions-list" class="admin-submissions" aria-live="polite"></div>
           </section>
         </section>

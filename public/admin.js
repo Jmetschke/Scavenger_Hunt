@@ -17,8 +17,24 @@ const huntDescriptionInput = document.getElementById('hunt-description');
 const huntActiveInput = document.getElementById('hunt-active');
 const huntsList = document.getElementById('admin-hunts-list');
 const challengeHuntInput = document.getElementById('challenge-hunt');
+const currentHuntName = document.getElementById('current-hunt-name');
+const currentHuntDescription = document.getElementById('current-hunt-description');
+const currentHuntStatus = document.getElementById('current-hunt-status');
+const sectionHuntNames = document.querySelectorAll('.section-hunt-name');
 let hunts = [];
 let selectedHuntId = null;
+
+function updateSelectedHuntContext() {
+  const selectedHunt = hunts.find((hunt) => hunt.id === selectedHuntId);
+  if (!selectedHunt) return;
+
+  currentHuntName.textContent = selectedHunt.name;
+  currentHuntDescription.textContent = selectedHunt.description || 'No description provided.';
+  currentHuntStatus.textContent = selectedHunt.active ? 'Available to participants' : 'Hidden from participants';
+  sectionHuntNames.forEach((element) => {
+    element.textContent = selectedHunt.name;
+  });
+}
 
 function setStatus(element, message, kind = '') {
   element.classList.remove('hidden', 'success', 'error');
@@ -49,14 +65,15 @@ async function loadAdminDashboard() {
   try {
     hunts = await fetchJson('/api/hunts?include_inactive=true');
     if (!selectedHuntId || !hunts.some((hunt) => hunt.id === selectedHuntId)) selectedHuntId = hunts[0]?.id;
+    updateSelectedHuntContext();
     challengeHuntInput.innerHTML = hunts.map((hunt) => `<option value="${hunt.id}">${hunt.name}</option>`).join('');
     challengeHuntInput.value = String(selectedHuntId || '');
     huntsList.innerHTML = hunts.map((hunt) => `
-      <div class="admin-item">
+      <div class="admin-item ${hunt.id === selectedHuntId ? 'selected-hunt' : ''}">
         <div class="admin-item-header"><strong>${hunt.name}</strong><span>${hunt.active ? 'Available' : 'Hidden'}</span></div>
         <p>${hunt.description || 'No description provided.'}</p>
         <div class="modal-actions">
-          <button class="secondary-button small" type="button" data-select-hunt="${hunt.id}">Manage</button>
+          <button class="${hunt.id === selectedHuntId ? 'primary-button' : 'secondary-button'} small" type="button" data-select-hunt="${hunt.id}">${hunt.id === selectedHuntId ? 'Editing' : 'Manage'}</button>
           <button class="secondary-button small" type="button" data-delete-hunt="${hunt.id}">Delete</button>
         </div>
       </div>
@@ -290,6 +307,11 @@ challengeForm.addEventListener('submit', async (event) => {
   } catch (error) {
     setStatus(adminLoginStatus, error.message, 'error');
   }
+});
+
+challengeHuntInput.addEventListener('change', () => {
+  selectedHuntId = Number(challengeHuntInput.value);
+  loadAdminDashboard();
 });
 
 huntForm.addEventListener('submit', async (event) => {

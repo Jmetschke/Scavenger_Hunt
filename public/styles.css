@@ -99,6 +99,50 @@ h1 {
   box-shadow: 0 12px 24px var(--shadow);
 }
 
+.current-hunt-banner {
+  position: sticky;
+  top: 0.75rem;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem 1.2rem;
+  margin-bottom: 1rem;
+  border: 2px solid var(--primary);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(255, 122, 24, 0.16), rgba(62, 195, 177, 0.14));
+}
+
+.current-hunt-banner .eyebrow {
+  margin-bottom: 0.25rem;
+}
+
+.current-hunt-banner h2 {
+  margin-bottom: 0.3rem;
+  font-size: clamp(1.35rem, 3vw, 1.9rem);
+}
+
+.current-hunt-description {
+  margin-bottom: 0;
+  color: var(--muted);
+}
+
+.hunt-status {
+  flex: 0 0 auto;
+  padding: 0.45rem 0.65rem;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--primary);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.section-hunt-name {
+  color: var(--primary);
+}
+
 .team-banner {
   display: flex;
   align-items: center;
@@ -445,6 +489,11 @@ input:focus, textarea:focus {
   background: var(--surface-alt);
 }
 
+.selected-hunt {
+  border: 2px solid var(--primary);
+  background: rgba(255, 122, 24, 0.1);
+}
+
 .admin-item-header,
 .admin-submission-header {
   display: flex;
@@ -551,5 +600,14 @@ input:focus, textarea:focus {
   .admin-submission-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .current-hunt-banner {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .hunt-status {
+    width: 100%;
   }
 }
