@@ -143,13 +143,19 @@ h1 {
   align-items: center;
 }
 
-input, textarea {
+input, textarea, select {
   width: 100%;
   background: var(--surface-alt);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 0.9rem 0.95rem;
   color: var(--text);
+}
+
+.helper-text {
+  margin: 0.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 input:focus, textarea:focus {

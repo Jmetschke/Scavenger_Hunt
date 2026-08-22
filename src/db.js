@@ -90,6 +90,29 @@ async function initDatabase() {
     const { seedChallenges } = require('./seed');
 
     await client.execute(`
+      CREATE TABLE IF NOT EXISTS hunts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    const huntColumns = await client.execute('PRAGMA table_info(hunts)');
+    if (!huntColumns.rows.length) {
+      await client.execute(`
+        CREATE TABLE IF NOT EXISTS hunts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          description TEXT,
+          active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+    }
+
+    await client.execute(`
       CREATE TABLE IF NOT EXISTS challenges (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
@@ -97,14 +120,21 @@ async function initDatabase() {
         points INTEGER NOT NULL DEFAULT 0,
         sort_order INTEGER NOT NULL DEFAULT 0,
         active INTEGER NOT NULL DEFAULT 1,
+        hunt_id INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    const challengeColumns = await client.execute('PRAGMA table_info(challenges)');
+    if (challengeColumns.rows.length && !challengeColumns.rows.some((row) => row.name === 'hunt_id')) {
+      await client.execute('ALTER TABLE challenges ADD COLUMN hunt_id INTEGER NOT NULL DEFAULT 1');
+    }
 
     await client.execute(`
       CREATE TABLE IF NOT EXISTS submissions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         challenge_id INTEGER NOT NULL,
+        hunt_id INTEGER NOT NULL DEFAULT 1,
         team_name TEXT NOT NULL,
         image_url TEXT NOT NULL,
         cloudinary_public_id TEXT NOT NULL,
@@ -115,6 +145,11 @@ async function initDatabase() {
         FOREIGN KEY(challenge_id) REFERENCES challenges(id)
       )
     `);
+
+    const submissionColumns = await client.execute('PRAGMA table_info(submissions)');
+    if (submissionColumns.rows.length && !submissionColumns.rows.some((row) => row.name === 'hunt_id')) {
+      await client.execute('ALTER TABLE submissions ADD COLUMN hunt_id INTEGER NOT NULL DEFAULT 1');
+    }
 
     await client.execute(`
       CREATE TABLE IF NOT EXISTS app_settings (

@@ -1,8 +1,9 @@
 async function loadLeaderboard() {
   const container = document.getElementById('leaderboard');
+  const huntId = new URLSearchParams(window.location.search).get('hunt_id') || localStorage.getItem('festival-hunt-id') || '';
 
   try {
-    const response = await fetch('/api/leaderboard');
+    const response = await fetch(`/api/leaderboard?hunt_id=${encodeURIComponent(huntId)}`);
     if (!response.ok) {
       throw new Error('Leaderboard is unavailable right now.');
     }

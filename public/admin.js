@@ -11,6 +11,14 @@ const challengeDescriptionInput = document.getElementById('challenge-description
 const challengePointsInput = document.getElementById('challenge-points');
 const challengeSortOrderInput = document.getElementById('challenge-sort-order');
 const challengeActiveInput = document.getElementById('challenge-active');
+const huntForm = document.getElementById('hunt-form');
+const huntNameInput = document.getElementById('hunt-name');
+const huntDescriptionInput = document.getElementById('hunt-description');
+const huntActiveInput = document.getElementById('hunt-active');
+const huntsList = document.getElementById('admin-hunts-list');
+const challengeHuntInput = document.getElementById('challenge-hunt');
+let hunts = [];
+let selectedHuntId = null;
 
 function setStatus(element, message, kind = '') {
   element.classList.remove('hidden', 'success', 'error');
@@ -39,7 +47,28 @@ async function fetchJson(url, options = {}) {
 
 async function loadAdminDashboard() {
   try {
-    const challenges = await fetchJson('/api/admin/challenges');
+    hunts = await fetchJson('/api/hunts');
+    if (!selectedHuntId || !hunts.some((hunt) => hunt.id === selectedHuntId)) selectedHuntId = hunts[0]?.id;
+    challengeHuntInput.innerHTML = hunts.map((hunt) => `<option value="${hunt.id}">${hunt.name}</option>`).join('');
+    challengeHuntInput.value = String(selectedHuntId || '');
+    huntsList.innerHTML = hunts.map((hunt) => `
+      <div class="admin-item">
+        <div class="admin-item-header"><strong>${hunt.name}</strong><span>${hunt.active ? 'Available' : 'Hidden'}</span></div>
+        <p>${hunt.description || 'No description provided.'}</p>
+        <div class="modal-actions">
+          <button class="secondary-button small" type="button" data-select-hunt="${hunt.id}">Manage</button>
+          <button class="secondary-button small" type="button" data-delete-hunt="${hunt.id}">Delete</button>
+        </div>
+      </div>
+    `).join('');
+    huntsList.querySelectorAll('[data-select-hunt]').forEach((button) => button.addEventListener('click', () => {
+      selectedHuntId = Number(button.dataset.selectHunt);
+      challengeHuntInput.value = String(selectedHuntId);
+      loadAdminDashboard();
+    }));
+    huntsList.querySelectorAll('[data-delete-hunt]').forEach((button) => button.addEventListener('click', () => deleteHunt(Number(button.dataset.deleteHunt))));
+
+    const challenges = await fetchJson(`/api/admin/challenges?hunt_id=${selectedHuntId}`);
     challengesList.innerHTML = challenges.length ? challenges.map((challenge) => `
       <div class="admin-item">
         <div class="admin-item-header">
@@ -68,7 +97,7 @@ async function loadAdminDashboard() {
       button.addEventListener('click', () => deleteChallenge(Number(button.dataset.deleteChallenge)));
     });
 
-    const submissions = await fetchJson('/api/admin/submissions');
+    const submissions = await fetchJson(`/api/admin/submissions?hunt_id=${selectedHuntId}`);
     if (!submissions.length) {
       submissionsList.innerHTML = '<div class="empty-state">No submissions yet.</div>';
       return;
@@ -127,7 +156,7 @@ async function loadAdminDashboard() {
 
 async function startChallengeEdit(challengeId) {
   try {
-    const challenges = await fetchJson('/api/admin/challenges');
+    const challenges = await fetchJson(`/api/admin/challenges?hunt_id=${selectedHuntId}`);
     const challenge = challenges.find((item) => Number(item.id) === challengeId);
     if (!challenge) return;
 
@@ -145,7 +174,7 @@ async function startChallengeEdit(challengeId) {
 
 async function toggleChallenge(challengeId) {
   try {
-    const challenges = await fetchJson('/api/admin/challenges');
+    const challenges = await fetchJson(`/api/admin/challenges?hunt_id=${selectedHuntId}`);
     const challenge = challenges.find((item) => Number(item.id) === challengeId);
     if (!challenge) return;
 
@@ -174,6 +203,17 @@ async function deleteChallenge(challengeId) {
     await fetchJson(`/api/challenges/${challengeId}?force=true`, {
       method: 'DELETE',
     });
+    loadAdminDashboard();
+  } catch (error) {
+    setStatus(adminLoginStatus, error.message, 'error');
+  }
+}
+
+async function deleteHunt(huntId) {
+  if (!window.confirm('Delete this empty scavenger hunt?')) return;
+  try {
+    await fetchJson(`/api/hunts/${huntId}`, { method: 'DELETE' });
+    selectedHuntId = null;
     loadAdminDashboard();
   } catch (error) {
     setStatus(adminLoginStatus, error.message, 'error');
@@ -222,6 +262,7 @@ challengeForm.addEventListener('submit', async (event) => {
   event.preventDefault();
 
   const payload = {
+  hunt_id: Number(challengeHuntInput.value),
     title: challengeTitleInput.value.trim(),
     description: challengeDescriptionInput.value.trim(),
     points: Number(challengePointsInput.value || 0),
@@ -245,6 +286,22 @@ challengeForm.addEventListener('submit', async (event) => {
     challengeForm.reset();
     challengeIdInput.value = '';
     challengeActiveInput.checked = true;
+    loadAdminDashboard();
+  } catch (error) {
+    setStatus(adminLoginStatus, error.message, 'error');
+  }
+});
+
+huntForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    const result = await fetchJson('/api/hunts', {
+      method: 'POST',
+      body: JSON.stringify({ name: huntNameInput.value.trim(), description: huntDescriptionInput.value.trim(), active: huntActiveInput.checked }),
+    });
+    selectedHuntId = result.id;
+    huntForm.reset();
+    huntActiveInput.checked = true;
     loadAdminDashboard();
   } catch (error) {
     setStatus(adminLoginStatus, error.message, 'error');

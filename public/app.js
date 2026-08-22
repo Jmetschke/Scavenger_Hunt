@@ -1,5 +1,8 @@
 const TEAM_KEY = 'festival-team-name';
+const HUNT_KEY = 'festival-hunt-id';
 const challengeList = document.getElementById('challenge-list');
+const huntSelect = document.getElementById('hunt-select');
+const huntDescription = document.getElementById('hunt-description');
 const teamNameInput = document.getElementById('team-name-input');
 const saveTeamButton = document.getElementById('save-team-button');
 const changeTeamButton = document.getElementById('change-team-button');
@@ -19,6 +22,28 @@ const teamBanner = document.getElementById('team-banner');
 const teamBannerName = document.getElementById('team-banner-name');
 
 let currentChallenge = null;
+let currentHuntId = null;
+let availableHunts = [];
+
+function getStoredHuntId() {
+  const stored = Number(localStorage.getItem(HUNT_KEY));
+  return Number.isInteger(stored) && stored > 0 ? stored : null;
+}
+
+async function loadHunts() {
+  const response = await fetch('/api/hunts');
+  if (!response.ok) throw new Error('Unable to load scavenger hunts right now.');
+  availableHunts = await response.json();
+  if (!availableHunts.length) throw new Error('No scavenger hunts have been created yet.');
+
+  const storedId = getStoredHuntId();
+  const selected = availableHunts.find((hunt) => hunt.id === storedId) || availableHunts.find((hunt) => hunt.active) || availableHunts[0];
+  currentHuntId = selected.id;
+  localStorage.setItem(HUNT_KEY, String(currentHuntId));
+  huntSelect.innerHTML = availableHunts.map((hunt) => `<option value="${hunt.id}">${hunt.name}${hunt.active ? '' : ' (inactive)'}</option>`).join('');
+  huntSelect.value = String(currentHuntId);
+  huntDescription.textContent = selected.description || '';
+}
 
 function syncTeamBanner() {
   const teamName = getStoredTeamName();
@@ -84,7 +109,7 @@ function formatDisplayDate(dateString) {
 
 async function loadChallenges() {
   try {
-    const response = await fetch('/api/challenges');
+    const response = await fetch(`/api/challenges?hunt_id=${currentHuntId}`);
     if (!response.ok) {
       throw new Error('Unable to load challenges right now.');
     }
@@ -127,7 +152,7 @@ async function loadChallenges() {
 
 async function openSubmitModal(challengeId) {
   try {
-    const response = await fetch('/api/challenges');
+    const response = await fetch(`/api/challenges?hunt_id=${currentHuntId}`);
     const challenges = await response.json();
     const challenge = challenges.find((item) => Number(item.id) === challengeId);
     if (!challenge) {
@@ -151,7 +176,7 @@ async function openSubmitModal(challengeId) {
 
 async function openEntriesModal(challengeId) {
   try {
-    const response = await fetch(`/api/challenges/${challengeId}/submissions`);
+    const response = await fetch(`/api/challenges/${challengeId}/submissions?hunt_id=${currentHuntId}`);
     if (!response.ok) {
       throw new Error('Entries could not be loaded.');
     }
@@ -278,6 +303,7 @@ submissionForm.addEventListener('submit', async (event) => {
 
   const formData = new FormData();
   formData.append('challenge_id', challengeId);
+  formData.append('hunt_id', String(currentHuntId));
   formData.append('team_name', teamName);
   formData.append('caption', caption);
   formData.append('image', file);
@@ -321,5 +347,15 @@ window.addEventListener('DOMContentLoaded', () => {
 
   syncTeamBanner();
   bindModalClosers();
+  loadHunts().then(loadChallenges).catch((error) => {
+    challengeList.innerHTML = `<div class="empty-state">${error.message}</div>`;
+  });
+});
+
+huntSelect.addEventListener('change', () => {
+  currentHuntId = Number(huntSelect.value);
+  localStorage.setItem(HUNT_KEY, String(currentHuntId));
+  const selected = availableHunts.find((hunt) => hunt.id === currentHuntId);
+  huntDescription.textContent = selected?.description || '';
   loadChallenges();
 });

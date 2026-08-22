@@ -50,6 +50,29 @@ function requireAdmin(req, res, next) {
   return next();
 }
 
+function getRequestedHuntId(req) {
+  const value = req.query.hunt_id || req.query.huntId || req.body?.hunt_id || req.body?.huntId;
+  if (value === undefined || value === '') return null;
+  const huntId = Number(value);
+  return Number.isInteger(huntId) && huntId > 0 ? huntId : null;
+}
+
+async function getDefaultHuntId() {
+  const client = getClient();
+  const result = await client.execute('SELECT id FROM hunts WHERE active = 1 ORDER BY id ASC LIMIT 1');
+  return result.rows.length ? Number(result.rows[0].id) : null;
+}
+
+function mapHunt(row) {
+  return {
+    id: Number(row.id),
+    name: row.name,
+    description: row.description,
+    active: Number(row.active) === 1,
+    created_at: row.created_at,
+  };
+}
+
 async function getChallengeList() {
   const client = getClient();
   const challengeRows = await client.execute({
@@ -100,12 +123,90 @@ async function getSubmissionRowsForChallenge(challengeId) {
 function createApiRouter() {
   const router = express.Router();
 
+  router.get('/api/hunts', async (req, res) => {
+    try {
+      const client = getClient();
+      const result = await client.execute('SELECT * FROM hunts ORDER BY active DESC, id ASC');
+      return res.json(result.rows.map(mapHunt));
+    } catch (error) {
+      console.error('Hunt fetch failed:', error);
+      return res.status(500).json({ error: 'Failed to load scavenger hunts.' });
+    }
+  });
+
+  router.post('/api/hunts', requireAdmin, async (req, res) => {
+    const name = sanitizeText(req.body.name, 120);
+    const description = sanitizeText(req.body.description, 500);
+    const active = parseBoolean(req.body.active !== undefined ? req.body.active : true);
+
+    if (!name) return res.status(400).json({ error: 'Hunt name is required.' });
+
+    try {
+      const client = getClient();
+      const result = await client.execute({
+        sql: 'INSERT INTO hunts (name, description, active) VALUES (?, ?, ?)',
+        args: [name, description, active ? 1 : 0],
+      });
+      return res.status(201).json({ success: true, id: Number(result.lastInsertRowid) });
+    } catch (error) {
+      console.error('Hunt creation failed:', error);
+      return res.status(500).json({ error: 'Could not create scavenger hunt.' });
+    }
+  });
+
+  router.put('/api/hunts/:id', requireAdmin, async (req, res) => {
+    const huntId = Number(req.params.id);
+    const name = sanitizeText(req.body.name, 120);
+    const description = sanitizeText(req.body.description, 500);
+    const active = parseBoolean(req.body.active !== undefined ? req.body.active : true);
+
+    if (!Number.isInteger(huntId) || huntId <= 0 || !name) {
+      return res.status(400).json({ error: 'A valid hunt ID and name are required.' });
+    }
+
+    try {
+      const client = getClient();
+      await client.execute({
+        sql: 'UPDATE hunts SET name = ?, description = ?, active = ? WHERE id = ?',
+        args: [name, description, active ? 1 : 0, huntId],
+      });
+      return res.json({ success: true });
+    } catch (error) {
+      console.error('Hunt update failed:', error);
+      return res.status(500).json({ error: 'Could not update scavenger hunt.' });
+    }
+  });
+
+  router.delete('/api/hunts/:id', requireAdmin, async (req, res) => {
+    const huntId = Number(req.params.id);
+    if (!Number.isInteger(huntId) || huntId <= 0) {
+      return res.status(400).json({ error: 'Invalid hunt ID.' });
+    }
+
+    try {
+      const client = getClient();
+      const result = await client.execute({
+        sql: 'SELECT COUNT(*) AS count FROM challenges WHERE hunt_id = ?',
+        args: [huntId],
+      });
+      if (Number(result.rows[0].count || 0) > 0) {
+        return res.status(409).json({ error: 'Delete this hunt\'s challenges before deleting the hunt.' });
+      }
+      await client.execute({ sql: 'DELETE FROM hunts WHERE id = ?', args: [huntId] });
+      return res.json({ success: true });
+    } catch (error) {
+      console.error('Hunt delete failed:', error);
+      return res.status(500).json({ error: 'Could not delete scavenger hunt.' });
+    }
+  });
+
   router.get('/api/challenges', async (req, res) => {
     const status = getDatabaseStatus();
     if (!status.ready) {
       return res.status(503).json({ error: 'Database is unavailable. Please try again later.' });
     }
 
+    const huntId = getRequestedHuntId(req) || await getDefaultHuntId();
     try {
       const client = getClient();
       const result = await client.execute({
@@ -114,13 +215,15 @@ function createApiRouter() {
             SELECT COUNT(*) FROM submissions s WHERE s.challenge_id = c.id
           ) as submission_count
           FROM challenges c
-          WHERE c.active = 1
+          WHERE c.active = 1 AND c.hunt_id = ?
           ORDER BY c.sort_order ASC, c.id ASC
         `,
+        args: [huntId],
       });
 
       const challenges = result.rows.map((row) => ({
         id: Number(row.id),
+        hunt_id: Number(row.hunt_id),
         title: row.title,
         description: row.description,
         points: Number(row.points),
@@ -145,9 +248,10 @@ function createApiRouter() {
 
     try {
       const client = getClient();
+      const huntId = getRequestedHuntId(req);
       const challenge = await client.execute({
-        sql: 'SELECT * FROM challenges WHERE id = ?',
-        args: [challengeId],
+        sql: 'SELECT * FROM challenges WHERE id = ? AND (? IS NULL OR hunt_id = ?)',
+        args: [challengeId, huntId, huntId],
       });
 
       if (!challenge.rows.length) {
@@ -155,13 +259,14 @@ function createApiRouter() {
       }
 
       const submissions = await client.execute({
-        sql: 'SELECT * FROM submissions WHERE challenge_id = ? ORDER BY submitted_at DESC',
-        args: [challengeId],
+        sql: 'SELECT * FROM submissions WHERE challenge_id = ? AND (? IS NULL OR hunt_id = ?) ORDER BY submitted_at DESC',
+        args: [challengeId, huntId, huntId],
       });
 
       return res.json({
         challenge: {
           id: Number(challenge.rows[0].id),
+          hunt_id: Number(challenge.rows[0].hunt_id),
           title: challenge.rows[0].title,
           description: challenge.rows[0].description,
         },
@@ -208,13 +313,15 @@ function createApiRouter() {
 
       const client = getClient();
       const challengeExists = await client.execute({
-        sql: 'SELECT id FROM challenges WHERE id = ?',
+        sql: 'SELECT id, hunt_id FROM challenges WHERE id = ?',
         args: [challengeId],
       });
 
       if (!challengeExists.rows.length) {
         return res.status(404).json({ error: 'Challenge not found.' });
       }
+
+      const huntId = getRequestedHuntId(req) || Number(challengeExists.rows[0].hunt_id);
 
       const teamName = sanitizeText(req.body.team_name || req.body.teamName, 80) || 'Anonymous Team';
       const caption = sanitizeText(req.body.caption, 240);
@@ -236,10 +343,10 @@ function createApiRouter() {
       try {
         const result = await client.execute({
           sql: `
-            INSERT INTO submissions (challenge_id, team_name, image_url, cloudinary_public_id, caption, submitted_at, approved, points_awarded)
-            VALUES (?, ?, ?, ?, ?, ?, 0, 0)
+            INSERT INTO submissions (challenge_id, hunt_id, team_name, image_url, cloudinary_public_id, caption, submitted_at, approved, points_awarded)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0)
           `,
-          args: [challengeId, teamName, uploadInfo.image_url, uploadInfo.cloudinary_public_id, caption, submittedAt],
+          args: [challengeId, huntId, teamName, uploadInfo.image_url, uploadInfo.cloudinary_public_id, caption, submittedAt],
         });
 
         return res.status(201).json({
@@ -274,15 +381,18 @@ function createApiRouter() {
   });
 
   router.get('/api/leaderboard', async (req, res) => {
+    const huntId = getRequestedHuntId(req) || await getDefaultHuntId();
     try {
       const client = getClient();
       const result = await client.execute({
         sql: `
           SELECT s.team_name, SUM(CASE WHEN s.approved = 1 THEN COALESCE(s.points_awarded, 0) ELSE 0 END) AS total_points
           FROM submissions s
+          WHERE s.hunt_id = ?
           GROUP BY s.team_name
           ORDER BY total_points DESC, s.team_name ASC
         `,
+        args: [huntId],
       });
 
       const leaderboard = result.rows.map((row, index) => ({
@@ -321,18 +431,22 @@ function createApiRouter() {
   });
 
   router.get('/api/admin/challenges', requireAdmin, async (req, res) => {
+    const huntId = getRequestedHuntId(req);
     try {
       const client = getClient();
       const result = await client.execute({
         sql: `
           SELECT c.*, (SELECT COUNT(*) FROM submissions s WHERE s.challenge_id = c.id) as submission_count
           FROM challenges c
+          WHERE (? IS NULL OR c.hunt_id = ?)
           ORDER BY c.sort_order ASC, c.id ASC
         `,
+        args: [huntId, huntId],
       });
 
       return res.json(result.rows.map((row) => ({
         id: Number(row.id),
+        hunt_id: Number(row.hunt_id),
         title: row.title,
         description: row.description,
         points: Number(row.points),
@@ -348,6 +462,7 @@ function createApiRouter() {
   });
 
   router.get('/api/admin/submissions', requireAdmin, async (req, res) => {
+    const huntId = getRequestedHuntId(req);
     try {
       const client = getClient();
       const result = await client.execute({
@@ -355,13 +470,16 @@ function createApiRouter() {
           SELECT s.*, c.title AS challenge_title
           FROM submissions s
           LEFT JOIN challenges c ON c.id = s.challenge_id
+          WHERE (? IS NULL OR s.hunt_id = ?)
           ORDER BY s.submitted_at DESC
         `,
+        args: [huntId, huntId],
       });
 
       return res.json(result.rows.map((row) => ({
         id: Number(row.id),
         challenge_id: Number(row.challenge_id),
+        hunt_id: Number(row.hunt_id),
         challenge_title: row.challenge_title || 'Unknown challenge',
         team_name: row.team_name,
         image_url: row.image_url,
@@ -383,9 +501,14 @@ function createApiRouter() {
     const points = Number(req.body.points || 0);
     const sortOrder = Number(req.body.sort_order || 0);
     const active = parseBoolean(req.body.active !== undefined ? req.body.active : true);
+    const huntId = getRequestedHuntId(req);
 
     if (!title) {
       return res.status(400).json({ error: 'Challenge title is required.' });
+    }
+
+    if (!huntId) {
+      return res.status(400).json({ error: 'A valid hunt is required.' });
     }
 
     if (!Number.isFinite(points) || points < 0) {
@@ -394,12 +517,14 @@ function createApiRouter() {
 
     try {
       const client = getClient();
+      const hunt = await client.execute({ sql: 'SELECT id FROM hunts WHERE id = ?', args: [huntId] });
+      if (!hunt.rows.length) return res.status(404).json({ error: 'Scavenger hunt not found.' });
       const result = await client.execute({
         sql: `
-          INSERT INTO challenges (title, description, points, sort_order, active)
-          VALUES (?, ?, ?, ?, ?)
+          INSERT INTO challenges (title, description, points, sort_order, active, hunt_id)
+          VALUES (?, ?, ?, ?, ?, ?)
         `,
-        args: [title, description, points, sortOrder, active ? 1 : 0],
+        args: [title, description, points, sortOrder, active ? 1 : 0, huntId],
       });
 
       return res.status(201).json({ success: true, id: Number(result.lastInsertRowid), message: 'Challenge created.' });
@@ -416,6 +541,7 @@ function createApiRouter() {
     const points = Number(req.body.points || 0);
     const sortOrder = Number(req.body.sort_order || 0);
     const active = parseBoolean(req.body.active !== undefined ? req.body.active : true);
+    const huntId = getRequestedHuntId(req);
 
     if (!Number.isInteger(challengeId) || challengeId <= 0) {
       return res.status(400).json({ error: 'Invalid challenge ID.' });
@@ -434,10 +560,10 @@ function createApiRouter() {
       await client.execute({
         sql: `
           UPDATE challenges
-          SET title = ?, description = ?, points = ?, sort_order = ?, active = ?
+          SET title = ?, description = ?, points = ?, sort_order = ?, active = ?, hunt_id = COALESCE(?, hunt_id)
           WHERE id = ?
         `,
-        args: [title, description, points, sortOrder, active ? 1 : 0, challengeId],
+        args: [title, description, points, sortOrder, active ? 1 : 0, huntId, challengeId],
       });
 
       return res.json({ success: true, message: 'Challenge updated.' });
