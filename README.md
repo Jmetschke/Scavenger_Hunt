@@ -69,7 +69,9 @@ Then open:
 
 ## Database initialization
 
-The app creates the required SQLite/Turso tables automatically on startup if they do not exist. If the challenge table is empty, a few starter challenges are inserted automatically.
+The app creates the required SQLite/Turso tables automatically on startup if they do not exist. On the first initialization, a few starter challenges are inserted automatically; after that, deleting all challenges will not cause the starter challenges to return.
+
+When `TURSO_DATABASE_URL` is configured, the app requires a valid `TURSO_AUTH_TOKEN` and will stop instead of falling back to local SQLite. This prevents hosted changes from appearing to save and then disappearing after a restart.
 
 ## How image uploads work
 

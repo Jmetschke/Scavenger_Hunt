@@ -5,6 +5,7 @@ const { createClient } = require('@libsql/client');
 const defaultLocalDbUrl = `file:${path.join(process.cwd(), 'data', 'scavenger.db')}`;
 const remoteDbUrl = process.env.TURSO_DATABASE_URL || '';
 const remoteAuthToken = process.env.TURSO_AUTH_TOKEN || undefined;
+const requiresRemoteDatabase = process.env.NODE_ENV === 'production' || Boolean(remoteDbUrl);
 
 let client = null;
 let databaseReady = false;
@@ -43,12 +44,19 @@ function createRemoteClient() {
 
 function getClient() {
   if (!client) {
+    if (requiresRemoteDatabase && (!remoteDbUrl || !remoteAuthToken)) {
+      throw new Error('Production requires TURSO_DATABASE_URL and TURSO_AUTH_TOKEN. Local SQLite fallback is disabled.');
+    }
+
     if (remoteDbUrl && remoteAuthToken) {
       try {
         client = createRemoteClient();
         databaseDetails.url = remoteDbUrl;
         databaseDetails.source = 'turso';
       } catch (error) {
+        if (requiresRemoteDatabase) {
+          throw new Error(`Turso connection failed in production: ${error.message || error}`);
+        }
         console.warn('Turso client creation failed. Falling back to local SQLite database.', error.message || error);
         client = createLocalClient();
         databaseDetails.url = defaultLocalDbUrl;
@@ -73,6 +81,9 @@ async function initDatabase() {
       await activeClient.execute('SELECT 1');
     } catch (error) {
       if (databaseDetails.source === 'turso') {
+        if (requiresRemoteDatabase) {
+          throw new Error(`Turso database check failed in production: ${error.message || error}`);
+        }
         console.warn('Turso database check failed. Falling back to local SQLite database.', error.message || error);
         client = createLocalClient();
         databaseDetails.url = defaultLocalDbUrl;

@@ -2,6 +2,15 @@ const { getClient } = require('./db');
 
 async function seedChallenges() {
   const client = getClient();
+  const seedMarker = await client.execute({
+    sql: 'SELECT setting_value FROM app_settings WHERE setting_key = ?',
+    args: ['starter_data_seeded'],
+  });
+
+  if (seedMarker.rows.length && seedMarker.rows[0].setting_value === '1') {
+    return;
+  }
+
   const huntResult = await client.execute('SELECT COUNT(*) as count FROM hunts');
   const huntTotal = Number(huntResult.rows?.[0]?.count || 0);
 
@@ -16,6 +25,10 @@ async function seedChallenges() {
   const total = Number(result.rows?.[0]?.count || 0);
 
   if (total > 0) {
+    await client.execute({
+      sql: 'INSERT OR REPLACE INTO app_settings (setting_key, setting_value) VALUES (?, ?)',
+      args: ['starter_data_seeded', '1'],
+    });
     return;
   }
 
@@ -38,6 +51,11 @@ async function seedChallenges() {
       args: [title, description, points, sortOrder, active, defaultHuntId],
     });
   }
+
+  await client.execute({
+    sql: 'INSERT OR REPLACE INTO app_settings (setting_key, setting_value) VALUES (?, ?)',
+    args: ['starter_data_seeded', '1'],
+  });
 }
 
 module.exports = {
