@@ -39,6 +39,32 @@ function getAdminToken() {
   return crypto.createHash('sha256').update(password).digest('hex');
 }
 
+function hashHuntPasscode(value) {
+  return crypto.createHash('sha256').update(String(value || '')).digest('hex');
+}
+
+function getHuntPasscode(req) {
+  return req.get('x-hunt-passcode') || req.query.passcode || req.body?.passcode || '';
+}
+
+async function requireHuntAccess(req, res, huntId) {
+  const client = getClient();
+  const result = await client.execute({
+    sql: 'SELECT passcode_hash FROM hunts WHERE id = ? AND active = 1',
+    args: [huntId],
+  });
+  if (!result.rows.length) {
+    res.status(404).json({ error: 'Scavenger hunt not found.' });
+    return false;
+  }
+  const expected = result.rows[0].passcode_hash;
+  if (expected && hashHuntPasscode(getHuntPasscode(req)) !== expected) {
+    res.status(401).json({ error: 'This event requires a passcode.', requiresPasscode: true });
+    return false;
+  }
+  return true;
+}
+
 function requireAdmin(req, res, next) {
   const token = req.cookies && req.cookies.admin_token;
   const expected = getAdminToken();
@@ -69,6 +95,7 @@ function mapHunt(row) {
     name: row.name,
     description: row.description,
     default_points: Number(row.default_points || 5),
+    requires_passcode: Boolean(row.passcode_hash),
     active: Number(row.active) === 1,
     created_at: row.created_at,
   };
@@ -150,6 +177,7 @@ function createApiRouter() {
     if (!Number.isInteger(huntId) || huntId <= 0 || !teamName) {
       return res.status(400).json({ error: 'A valid hunt and team name are required.' });
     }
+    if (!await requireHuntAccess(req, res, huntId)) return;
 
     try {
       const client = getClient();
@@ -181,6 +209,7 @@ function createApiRouter() {
     if (!Number.isInteger(huntId) || huntId <= 0) {
       return res.status(400).json({ error: 'Invalid hunt ID.' });
     }
+    if (!await requireHuntAccess(req, res, huntId)) return;
 
     try {
       const client = getClient();
@@ -228,6 +257,7 @@ function createApiRouter() {
     const description = sanitizeText(req.body.description, 500);
     const active = parseBoolean(req.body.active !== undefined ? req.body.active : true);
     const defaultPoints = Number(req.body.default_points ?? 5);
+    const passcode = sanitizeText(req.body.passcode, 120);
 
     if (!name) return res.status(400).json({ error: 'Hunt name is required.' });
     if (!Number.isInteger(defaultPoints) || defaultPoints < 0) {
@@ -237,8 +267,8 @@ function createApiRouter() {
     try {
       const client = getClient();
       const result = await client.execute({
-        sql: 'INSERT INTO hunts (name, description, default_points, active) VALUES (?, ?, ?, ?)',
-        args: [name, description, defaultPoints, active ? 1 : 0],
+        sql: 'INSERT INTO hunts (name, description, default_points, passcode_hash, active) VALUES (?, ?, ?, ?, ?)',
+        args: [name, description, defaultPoints, passcode ? hashHuntPasscode(passcode) : null, active ? 1 : 0],
       });
       return res.status(201).json({ success: true, id: Number(result.lastInsertRowid) });
     } catch (error) {
@@ -253,6 +283,8 @@ function createApiRouter() {
     const description = sanitizeText(req.body.description, 500);
     const active = parseBoolean(req.body.active !== undefined ? req.body.active : true);
     const defaultPoints = Number(req.body.default_points ?? 5);
+    const passcode = sanitizeText(req.body.passcode, 120);
+    const clearPasscode = req.body.clear_passcode === true || req.body.clear_passcode === 'true';
 
     if (!Number.isInteger(huntId) || huntId <= 0 || !name) {
       return res.status(400).json({ error: 'A valid hunt ID and name are required.' });
@@ -264,8 +296,10 @@ function createApiRouter() {
     try {
       const client = getClient();
       await client.execute({
-        sql: 'UPDATE hunts SET name = ?, description = ?, default_points = ?, active = ? WHERE id = ?',
-        args: [name, description, defaultPoints, active ? 1 : 0, huntId],
+        sql: `UPDATE hunts SET name = ?, description = ?, default_points = ?, active = ?${passcode || clearPasscode ? ', passcode_hash = ?' : ''} WHERE id = ?`,
+        args: passcode || clearPasscode
+          ? [name, description, defaultPoints, active ? 1 : 0, passcode ? hashHuntPasscode(passcode) : null, huntId]
+          : [name, description, defaultPoints, active ? 1 : 0, huntId],
       });
       return res.json({ success: true });
     } catch (error) {
@@ -304,6 +338,7 @@ function createApiRouter() {
     }
 
     const huntId = getRequestedHuntId(req) || await getDefaultHuntId();
+    if (!await requireHuntAccess(req, res, huntId)) return;
     try {
       const client = getClient();
       const result = await client.execute({
@@ -346,6 +381,7 @@ function createApiRouter() {
     try {
       const client = getClient();
       const huntId = getRequestedHuntId(req);
+      if (huntId && !await requireHuntAccess(req, res, huntId)) return;
       const challenge = await client.execute({
         sql: 'SELECT * FROM challenges WHERE id = ? AND (? IS NULL OR hunt_id = ?)',
         args: [challengeId, huntId, huntId],
@@ -354,6 +390,9 @@ function createApiRouter() {
       if (!challenge.rows.length) {
         return res.status(404).json({ error: 'Challenge not found.' });
       }
+
+      const challengeHuntId = Number(challenge.rows[0].hunt_id);
+      if (!await requireHuntAccess(req, res, challengeHuntId)) return;
 
       const submissions = await client.execute({
         sql: 'SELECT * FROM submissions WHERE challenge_id = ? AND (? IS NULL OR hunt_id = ?) ORDER BY submitted_at DESC',
@@ -422,6 +461,7 @@ function createApiRouter() {
       if (getRequestedHuntId(req) && huntId !== Number(challengeExists.rows[0].hunt_id)) {
         return res.status(400).json({ error: 'The selected challenge does not belong to this hunt.' });
       }
+      if (!await requireHuntAccess(req, res, huntId)) return;
 
       const teamName = sanitizeText(req.body.team_name || req.body.teamName, 80) || 'Anonymous Team';
       const caption = sanitizeText(req.body.caption, 240);
@@ -483,6 +523,7 @@ function createApiRouter() {
 
   router.get('/api/leaderboard', async (req, res) => {
     const huntId = getRequestedHuntId(req) || await getDefaultHuntId();
+    if (!await requireHuntAccess(req, res, huntId)) return;
     try {
       const client = getClient();
       const result = await client.execute({

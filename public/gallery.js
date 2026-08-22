@@ -1,10 +1,29 @@
 const GALLERY_HUNT_KEY = 'festival-gallery-hunt-id';
+const HUNT_PASSCODE_KEY = 'festival-hunt-passcodes';
 const gallerySelect = document.getElementById('gallery-hunt-select');
 const galleryDescription = document.getElementById('gallery-hunt-description');
 const galleryEventName = document.getElementById('gallery-event-name');
 const galleryCount = document.getElementById('gallery-count');
 const galleryGrid = document.getElementById('gallery-grid');
 let hunts = [];
+
+function getStoredPasscodes() {
+  try {
+    return JSON.parse(localStorage.getItem(HUNT_PASSCODE_KEY) || '{}');
+  } catch (error) {
+    return {};
+  }
+}
+
+async function requestHuntAccess(hunt) {
+  const stored = getStoredPasscodes();
+  if (!hunt.requires_passcode || stored[hunt.id]) return true;
+  const passcode = window.prompt(`Enter the passcode for ${hunt.name}:`);
+  if (!passcode) return false;
+  stored[hunt.id] = passcode.trim();
+  localStorage.setItem(HUNT_PASSCODE_KEY, JSON.stringify(stored));
+  return true;
+}
 
 function formatDate(value) {
   const date = new Date(value);
@@ -18,8 +37,17 @@ function getStoredHuntId() {
 
 async function loadGallery(huntId) {
   galleryGrid.innerHTML = '<div class="empty-state">Loading photos...</div>';
-  const response = await fetch(`/api/hunts/${huntId}/submissions`);
+  const response = await fetch(`/api/hunts/${huntId}/submissions`, {
+    headers: { 'X-Hunt-Passcode': getStoredPasscodes()[huntId] || '' },
+  });
   const result = await response.json().catch(() => ({}));
+  if (response.status === 401) {
+    const stored = getStoredPasscodes();
+    delete stored[huntId];
+    localStorage.setItem(HUNT_PASSCODE_KEY, JSON.stringify(stored));
+    const hunt = hunts.find((item) => item.id === huntId);
+    if (hunt && await requestHuntAccess(hunt)) return loadGallery(huntId);
+  }
   if (!response.ok) throw new Error(result.error || 'Unable to load this event gallery.');
 
   galleryEventName.textContent = result.hunt.name;
@@ -64,6 +92,9 @@ async function initializeGallery() {
     gallerySelect.value = String(selected.id);
     galleryDescription.textContent = selected.description || '';
     localStorage.setItem(GALLERY_HUNT_KEY, String(selected.id));
+    if (selected.requires_passcode && !await requestHuntAccess(selected)) {
+      throw new Error('Enter the event passcode to view this gallery.');
+    }
     await loadGallery(selected.id);
   } catch (error) {
     galleryGrid.innerHTML = `<div class="empty-state">${error.message || 'Gallery unavailable.'}</div>`;
@@ -75,6 +106,12 @@ gallerySelect.addEventListener('change', async () => {
   const selected = hunts.find((hunt) => hunt.id === huntId);
   localStorage.setItem(GALLERY_HUNT_KEY, String(huntId));
   galleryDescription.textContent = selected?.description || '';
+  if (!selected) return;
+  const hasAccess = await requestHuntAccess(selected);
+  if (!hasAccess) {
+    galleryGrid.innerHTML = '<div class="empty-state">Enter the event passcode to view this gallery.</div>';
+    return;
+  }
   try {
     await loadGallery(huntId);
   } catch (error) {

@@ -106,6 +106,7 @@ async function initDatabase() {
         name TEXT NOT NULL,
         description TEXT,
         default_points INTEGER NOT NULL DEFAULT 5,
+        passcode_hash TEXT,
         active INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
@@ -114,6 +115,9 @@ async function initDatabase() {
     const huntColumns = await client.execute('PRAGMA table_info(hunts)');
     if (huntColumns.rows.length && !huntColumns.rows.some((row) => row.name === 'default_points')) {
       await client.execute('ALTER TABLE hunts ADD COLUMN default_points INTEGER NOT NULL DEFAULT 5');
+    }
+    if (huntColumns.rows.length && !huntColumns.rows.some((row) => row.name === 'passcode_hash')) {
+      await client.execute('ALTER TABLE hunts ADD COLUMN passcode_hash TEXT');
     }
 
     await client.execute(`

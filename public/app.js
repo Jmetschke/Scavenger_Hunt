@@ -1,5 +1,6 @@
 const TEAM_KEY = 'festival-team-name';
 const HUNT_KEY = 'festival-hunt-id';
+const HUNT_PASSCODE_KEY = 'festival-hunt-passcodes';
 const challengeList = document.getElementById('challenge-list');
 const huntSelect = document.getElementById('hunt-select');
 const huntDescription = document.getElementById('hunt-description');
@@ -28,6 +29,29 @@ let currentHuntId = null;
 let availableHunts = [];
 let scoreRefreshTimer = null;
 
+function getStoredPasscodes() {
+  try {
+    return JSON.parse(localStorage.getItem(HUNT_PASSCODE_KEY) || '{}');
+  } catch (error) {
+    return {};
+  }
+}
+
+function getHuntHeaders() {
+  const passcode = getStoredPasscodes()[currentHuntId];
+  return passcode ? { 'X-Hunt-Passcode': passcode } : {};
+}
+
+async function requestHuntAccess(hunt) {
+  if (!hunt.requires_passcode || getStoredPasscodes()[hunt.id]) return true;
+  const passcode = window.prompt(`Enter the passcode for ${hunt.name}:`);
+  if (!passcode) return false;
+  const stored = getStoredPasscodes();
+  stored[hunt.id] = passcode.trim();
+  localStorage.setItem(HUNT_PASSCODE_KEY, JSON.stringify(stored));
+  return true;
+}
+
 function getStoredHuntId() {
   const stored = Number(localStorage.getItem(HUNT_KEY));
   return Number.isInteger(stored) && stored > 0 ? stored : null;
@@ -46,6 +70,9 @@ async function loadHunts() {
   huntSelect.innerHTML = availableHunts.map((hunt) => `<option value="${hunt.id}">${hunt.name}${hunt.active ? '' : ' (inactive)'}</option>`).join('');
   huntSelect.value = String(currentHuntId);
   huntDescription.textContent = selected.description || '';
+  if (selected.requires_passcode && !await requestHuntAccess(selected)) {
+    throw new Error('Enter the event passcode to view this hunt.');
+  }
 }
 
 function syncTeamBanner() {
@@ -83,7 +110,7 @@ async function loadTeamScore() {
   }
 
   try {
-    const response = await fetch(`/api/hunts/${currentHuntId}/teams/score?team_name=${encodeURIComponent(teamName)}`);
+    const response = await fetch(`/api/hunts/${currentHuntId}/teams/score?team_name=${encodeURIComponent(teamName)}`, { headers: getHuntHeaders() });
     if (!response.ok) throw new Error('Score unavailable');
     const score = await response.json();
     scoreTeamName.textContent = score.teamName || teamName;
@@ -140,7 +167,14 @@ function formatDisplayDate(dateString) {
 
 async function loadChallenges() {
   try {
-    const response = await fetch(`/api/challenges?hunt_id=${currentHuntId}`);
+    const response = await fetch(`/api/challenges?hunt_id=${currentHuntId}`, { headers: getHuntHeaders() });
+    if (response.status === 401) {
+      const stored = getStoredPasscodes();
+      delete stored[currentHuntId];
+      localStorage.setItem(HUNT_PASSCODE_KEY, JSON.stringify(stored));
+      const hunt = availableHunts.find((item) => item.id === currentHuntId);
+      if (hunt && await requestHuntAccess(hunt)) return loadChallenges();
+    }
     if (!response.ok) {
       throw new Error('Unable to load challenges right now.');
     }
@@ -206,7 +240,7 @@ async function openSubmitModal(challengeId) {
 
 async function openEntriesModal(challengeId) {
   try {
-    const response = await fetch(`/api/challenges/${challengeId}/submissions?hunt_id=${currentHuntId}`);
+    const response = await fetch(`/api/challenges/${challengeId}/submissions?hunt_id=${currentHuntId}`, { headers: getHuntHeaders() });
     if (!response.ok) {
       throw new Error('Entries could not be loaded.');
     }
@@ -347,6 +381,7 @@ submissionForm.addEventListener('submit', async (event) => {
   try {
     const response = await fetch('/api/submissions', {
       method: 'POST',
+      headers: getHuntHeaders(),
       body: formData,
     });
 
@@ -394,6 +429,12 @@ huntSelect.addEventListener('change', () => {
   localStorage.setItem(HUNT_KEY, String(currentHuntId));
   const selected = availableHunts.find((hunt) => hunt.id === currentHuntId);
   huntDescription.textContent = selected?.description || '';
-  loadChallenges();
-  loadTeamScore();
+  requestHuntAccess(selected).then((hasAccess) => {
+    if (hasAccess) {
+      loadChallenges();
+      loadTeamScore();
+    } else {
+      challengeList.innerHTML = '<div class="empty-state">Enter the event passcode to view this hunt.</div>';
+    }
+  });
 });

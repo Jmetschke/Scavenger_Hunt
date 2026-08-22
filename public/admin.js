@@ -16,6 +16,9 @@ const huntForm = document.getElementById('hunt-form');
 const huntNameInput = document.getElementById('hunt-name');
 const huntDescriptionInput = document.getElementById('hunt-description');
 const huntDefaultPointsInput = document.getElementById('hunt-default-points');
+const huntPasscodeInput = document.getElementById('hunt-passcode');
+const clearPasscodeRow = document.getElementById('clear-passcode-row');
+const clearPasscodeInput = document.getElementById('clear-passcode');
 const huntActiveInput = document.getElementById('hunt-active');
 const saveHuntButton = document.getElementById('save-hunt-button');
 const resetHuntButton = document.getElementById('reset-hunt-form');
@@ -44,6 +47,9 @@ function resetHuntForm() {
   editingHuntId = null;
   huntForm.reset();
   huntDefaultPointsInput.value = '5';
+  huntPasscodeInput.value = '';
+  clearPasscodeInput.checked = false;
+  clearPasscodeRow.classList.add('hidden');
   huntActiveInput.checked = true;
   saveHuntButton.textContent = 'Create Hunt';
 }
@@ -56,6 +62,9 @@ function startHuntEdit(huntId) {
   huntNameInput.value = hunt.name;
   huntDescriptionInput.value = hunt.description || '';
   huntDefaultPointsInput.value = String(hunt.default_points);
+  huntPasscodeInput.value = '';
+  clearPasscodeInput.checked = false;
+  clearPasscodeRow.classList.toggle('hidden', !hunt.requires_passcode);
   huntActiveInput.checked = hunt.active;
   saveHuntButton.textContent = 'Save Hunt Changes';
   huntNameInput.focus();
@@ -371,7 +380,7 @@ huntForm.addEventListener('submit', async (event) => {
   try {
     const result = await fetchJson(editingHuntId ? `/api/hunts/${editingHuntId}` : '/api/hunts', {
       method: editingHuntId ? 'PUT' : 'POST',
-      body: JSON.stringify({ name: huntNameInput.value.trim(), description: huntDescriptionInput.value.trim(), default_points: Number(huntDefaultPointsInput.value), active: huntActiveInput.checked }),
+      body: JSON.stringify({ name: huntNameInput.value.trim(), description: huntDescriptionInput.value.trim(), default_points: Number(huntDefaultPointsInput.value), passcode: huntPasscodeInput.value.trim(), clear_passcode: clearPasscodeInput.checked, active: huntActiveInput.checked }),
     });
     if (!editingHuntId) selectedHuntId = result.id;
     resetHuntForm();

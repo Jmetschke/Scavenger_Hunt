@@ -46,6 +46,9 @@
               <textarea id="hunt-description" rows="2" maxlength="500" placeholder="Private practice event"></textarea>
               <label class="label" for="hunt-default-points">Default points for new challenges</label>
               <input id="hunt-default-points" type="number" min="0" step="1" value="5" required />
+              <label class="label" for="hunt-passcode">Event passcode <span class="optional-label">(optional)</span></label>
+              <input id="hunt-passcode" type="text" maxlength="120" placeholder="Leave blank for no passcode" autocomplete="off" />
+              <label id="clear-passcode-row" class="checkbox-row hidden"><input id="clear-passcode" type="checkbox" /> <span>Remove existing passcode</span></label>
               <label class="checkbox-row"><input id="hunt-active" type="checkbox" checked /> <span>Available to participants</span></label>
               <div class="modal-actions">
                 <button id="save-hunt-button" type="submit" class="primary-button">Create Hunt</button>
