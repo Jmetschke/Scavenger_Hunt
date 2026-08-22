@@ -47,7 +47,10 @@
               <label class="label" for="hunt-default-points">Default points for new challenges</label>
               <input id="hunt-default-points" type="number" min="0" step="1" value="5" required />
               <label class="checkbox-row"><input id="hunt-active" type="checkbox" checked /> <span>Available to participants</span></label>
-              <button type="submit" class="primary-button">Create Hunt</button>
+              <div class="modal-actions">
+                <button id="save-hunt-button" type="submit" class="primary-button">Create Hunt</button>
+                <button id="reset-hunt-form" type="button" class="secondary-button">Clear</button>
+              </div>
             </form>
             <div id="admin-hunts-list" class="admin-list" aria-live="polite"></div>
           </section>

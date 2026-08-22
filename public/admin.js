@@ -16,6 +16,8 @@ const huntNameInput = document.getElementById('hunt-name');
 const huntDescriptionInput = document.getElementById('hunt-description');
 const huntDefaultPointsInput = document.getElementById('hunt-default-points');
 const huntActiveInput = document.getElementById('hunt-active');
+const saveHuntButton = document.getElementById('save-hunt-button');
+const resetHuntButton = document.getElementById('reset-hunt-form');
 const huntsList = document.getElementById('admin-hunts-list');
 const challengeHuntInput = document.getElementById('challenge-hunt');
 const currentHuntName = document.getElementById('current-hunt-name');
@@ -24,6 +26,7 @@ const currentHuntStatus = document.getElementById('current-hunt-status');
 const sectionHuntNames = document.querySelectorAll('.section-hunt-name');
 let hunts = [];
 let selectedHuntId = null;
+let editingHuntId = null;
 
 function getSelectedHunt() {
   return hunts.find((hunt) => hunt.id === selectedHuntId);
@@ -34,6 +37,27 @@ function setChallengeDefaults() {
   if (!selectedHunt) return;
   challengePointsInput.value = String(selectedHunt.default_points);
   challengeSortOrderInput.value = '';
+}
+
+function resetHuntForm() {
+  editingHuntId = null;
+  huntForm.reset();
+  huntDefaultPointsInput.value = '5';
+  huntActiveInput.checked = true;
+  saveHuntButton.textContent = 'Create Hunt';
+}
+
+function startHuntEdit(huntId) {
+  const hunt = hunts.find((item) => item.id === huntId);
+  if (!hunt) return;
+
+  editingHuntId = hunt.id;
+  huntNameInput.value = hunt.name;
+  huntDescriptionInput.value = hunt.description || '';
+  huntDefaultPointsInput.value = String(hunt.default_points);
+  huntActiveInput.checked = hunt.active;
+  saveHuntButton.textContent = 'Save Hunt Changes';
+  huntNameInput.focus();
 }
 
 function updateSelectedHuntContext() {
@@ -87,6 +111,7 @@ async function loadAdminDashboard() {
         <p><strong>New challenges start at ${hunt.default_points} points.</strong></p>
         <div class="modal-actions">
           <button class="${hunt.id === selectedHuntId ? 'primary-button' : 'secondary-button'} small" type="button" data-select-hunt="${hunt.id}">${hunt.id === selectedHuntId ? 'Editing' : 'Manage'}</button>
+          <button class="secondary-button small" type="button" data-edit-hunt="${hunt.id}">Edit</button>
           <button class="secondary-button small" type="button" data-delete-hunt="${hunt.id}">Delete</button>
         </div>
       </div>
@@ -98,6 +123,7 @@ async function loadAdminDashboard() {
       loadAdminDashboard();
     }));
     huntsList.querySelectorAll('[data-delete-hunt]').forEach((button) => button.addEventListener('click', () => deleteHunt(Number(button.dataset.deleteHunt))));
+    huntsList.querySelectorAll('[data-edit-hunt]').forEach((button) => button.addEventListener('click', () => startHuntEdit(Number(button.dataset.editHunt))));
 
     const challenges = await fetchJson(`/api/admin/challenges?hunt_id=${selectedHuntId}`);
     challengesList.innerHTML = challenges.length ? challenges.map((challenge) => `
@@ -335,20 +361,20 @@ challengeHuntInput.addEventListener('change', () => {
 huntForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   try {
-    const result = await fetchJson('/api/hunts', {
-      method: 'POST',
+    const result = await fetchJson(editingHuntId ? `/api/hunts/${editingHuntId}` : '/api/hunts', {
+      method: editingHuntId ? 'PUT' : 'POST',
       body: JSON.stringify({ name: huntNameInput.value.trim(), description: huntDescriptionInput.value.trim(), default_points: Number(huntDefaultPointsInput.value), active: huntActiveInput.checked }),
     });
-    selectedHuntId = result.id;
-    huntForm.reset();
-    huntDefaultPointsInput.value = '5';
-    huntActiveInput.checked = true;
+    if (!editingHuntId) selectedHuntId = result.id;
+    resetHuntForm();
     await loadAdminDashboard();
     setChallengeDefaults();
   } catch (error) {
     setStatus(adminLoginStatus, error.message, 'error');
   }
 });
+
+resetHuntButton.addEventListener('click', resetHuntForm);
 
 document.getElementById('reset-challenge-form').addEventListener('click', () => {
   challengeForm.reset();
