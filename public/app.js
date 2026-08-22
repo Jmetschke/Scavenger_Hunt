@@ -20,9 +20,13 @@ const submitEntryButton = document.getElementById('submit-entry-button');
 const entriesContent = document.getElementById('entries-content');
 const teamBanner = document.getElementById('team-banner');
 const teamBannerName = document.getElementById('team-banner-name');
+const scoreTeamName = document.getElementById('score-team-name');
+const scoreTotal = document.getElementById('score-total');
+const scoreCompleted = document.getElementById('score-completed');
 
 let currentHuntId = null;
 let availableHunts = [];
+let scoreRefreshTimer = null;
 
 function getStoredHuntId() {
   const stored = Number(localStorage.getItem(HUNT_KEY));
@@ -67,6 +71,34 @@ function setTeamName(name) {
 
 function getStoredTeamName() {
   return localStorage.getItem(TEAM_KEY) || '';
+}
+
+async function loadTeamScore() {
+  const teamName = getStoredTeamName();
+  if (!currentHuntId || !teamName) {
+    scoreTeamName.textContent = 'Enter a team name';
+    scoreTotal.textContent = '0';
+    scoreCompleted.textContent = '0 challenges completed';
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/hunts/${currentHuntId}/teams/score?team_name=${encodeURIComponent(teamName)}`);
+    if (!response.ok) throw new Error('Score unavailable');
+    const score = await response.json();
+    scoreTeamName.textContent = score.teamName || teamName;
+    scoreTotal.textContent = String(score.totalPoints || 0);
+    scoreCompleted.textContent = `${score.completedChallenges || 0} challenges completed`;
+  } catch (error) {
+    scoreTeamName.textContent = teamName;
+    scoreTotal.textContent = '0';
+    scoreCompleted.textContent = 'Score unavailable';
+  }
+}
+
+function queueTeamScoreRefresh() {
+  window.clearTimeout(scoreRefreshTimer);
+  scoreRefreshTimer = window.setTimeout(loadTeamScore, 250);
 }
 
 function showStatus(element, message, type = '') {
@@ -237,6 +269,7 @@ saveTeamButton.addEventListener('click', () => {
   }
 
   setTeamName(newName);
+  loadTeamScore();
   teamNameInput.value = newName;
   teamNameForm.value = newName;
 });
@@ -246,10 +279,12 @@ teamNameInput.addEventListener('input', () => {
   if (!currentValue) {
     localStorage.removeItem(TEAM_KEY);
     teamNameForm.value = '';
+    queueTeamScoreRefresh();
     return;
   }
 
   setTeamName(currentValue);
+  queueTeamScoreRefresh();
 });
 
 teamNameForm.addEventListener('input', () => {
@@ -257,10 +292,12 @@ teamNameForm.addEventListener('input', () => {
   if (!currentValue) {
     localStorage.removeItem(TEAM_KEY);
     teamNameInput.value = '';
+    queueTeamScoreRefresh();
     return;
   }
 
   setTeamName(currentValue);
+  queueTeamScoreRefresh();
 });
 
 changeTeamButton.addEventListener('click', () => {
@@ -268,6 +305,7 @@ changeTeamButton.addEventListener('click', () => {
   teamNameInput.value = '';
   teamNameForm.value = '';
   syncTeamBanner();
+  loadTeamScore();
   teamNameInput.focus();
 });
 
@@ -327,6 +365,7 @@ submissionForm.addEventListener('submit', async (event) => {
     setTimeout(() => {
       closeModal(submissionModal);
       loadChallenges();
+      loadTeamScore();
     }, 700);
   } catch (error) {
     showStatus(uploadStatus, error.message || 'Upload failed. Please try again.', 'error');
@@ -345,7 +384,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   syncTeamBanner();
   bindModalClosers();
-  loadHunts().then(loadChallenges).catch((error) => {
+  loadHunts().then(() => Promise.all([loadChallenges(), loadTeamScore()])).catch((error) => {
     challengeList.innerHTML = `<div class="empty-state">${error.message}</div>`;
   });
 });
@@ -356,4 +395,5 @@ huntSelect.addEventListener('change', () => {
   const selected = availableHunts.find((hunt) => hunt.id === currentHuntId);
   huntDescription.textContent = selected?.description || '';
   loadChallenges();
+  loadTeamScore();
 });

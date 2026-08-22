@@ -74,6 +74,60 @@ function mapHunt(row) {
   };
 }
 
+function normalizeTeamName(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function getTeamKey(teamName) {
+  return normalizeTeamName(teamName).toLowerCase();
+}
+
+async function ensureEventTeam(client, huntId, teamName) {
+  const displayName = String(teamName || '').trim() || 'Anonymous Team';
+  const teamKey = getTeamKey(displayName);
+  await client.execute({
+    sql: 'INSERT OR IGNORE INTO event_teams (hunt_id, team_name, team_key) VALUES (?, ?, ?)',
+    args: [huntId, displayName, teamKey],
+  });
+  const result = await client.execute({
+    sql: 'SELECT id, hunt_id, team_name, team_key FROM event_teams WHERE hunt_id = ? AND team_key = ?',
+    args: [huntId, teamKey],
+  });
+  return result.rows[0];
+}
+
+async function syncTeamChallengeScore(client, huntId, challengeId, teamKey) {
+  const team = await client.execute({
+    sql: 'SELECT id FROM event_teams WHERE hunt_id = ? AND team_key = ?',
+    args: [huntId, teamKey],
+  });
+  if (!team.rows.length) return;
+
+  const submissions = await client.execute({
+    sql: 'SELECT team_name, approved FROM submissions WHERE hunt_id = ? AND challenge_id = ?',
+    args: [huntId, challengeId],
+  });
+  const approvedCount = submissions.rows.filter((row) => Number(row.approved) === 1 && getTeamKey(row.team_name) === teamKey).length;
+  const eventTeamId = Number(team.rows[0].id);
+  if (approvedCount > 0) {
+    const challenge = await client.execute({
+      sql: 'SELECT points FROM challenges WHERE id = ? AND hunt_id = ?',
+      args: [challengeId, huntId],
+    });
+    if (challenge.rows.length) {
+      await client.execute({
+        sql: 'INSERT OR IGNORE INTO team_challenge_scores (event_team_id, challenge_id, points_awarded) VALUES (?, ?, ?)',
+        args: [eventTeamId, challengeId, Number(challenge.rows[0].points || 0)],
+      });
+    }
+  } else {
+    await client.execute({
+      sql: 'DELETE FROM team_challenge_scores WHERE event_team_id = ? AND challenge_id = ?',
+      args: [eventTeamId, challengeId],
+    });
+  }
+}
+
 function createApiRouter() {
   const router = express.Router();
 
@@ -87,6 +141,85 @@ function createApiRouter() {
     } catch (error) {
       console.error('Hunt fetch failed:', error);
       return res.status(500).json({ error: 'Failed to load scavenger hunts.' });
+    }
+  });
+
+  router.get('/api/hunts/:huntId/teams/score', async (req, res) => {
+    const huntId = Number(req.params.huntId);
+    const teamName = normalizeTeamName(req.query.team_name || req.query.teamName);
+    if (!Number.isInteger(huntId) || huntId <= 0 || !teamName) {
+      return res.status(400).json({ error: 'A valid hunt and team name are required.' });
+    }
+
+    try {
+      const client = getClient();
+      const team = await client.execute({
+        sql: 'SELECT id, team_name FROM event_teams WHERE hunt_id = ? AND team_key = ?',
+        args: [huntId, getTeamKey(teamName)],
+      });
+      if (!team.rows.length) {
+        return res.json({ eventId: huntId, teamName, totalPoints: 0, completedChallenges: 0 });
+      }
+      const score = await client.execute({
+        sql: 'SELECT COALESCE(SUM(points_awarded), 0) AS total_points, COUNT(*) AS completed_challenges FROM team_challenge_scores WHERE event_team_id = ?',
+        args: [Number(team.rows[0].id)],
+      });
+      return res.json({
+        eventId: huntId,
+        teamName: team.rows[0].team_name,
+        totalPoints: Number(score.rows[0].total_points || 0),
+        completedChallenges: Number(score.rows[0].completed_challenges || 0),
+      });
+    } catch (error) {
+      console.error('Team score fetch failed:', error);
+      return res.status(500).json({ error: 'Failed to load team score.' });
+    }
+  });
+
+  router.get('/api/hunts/:huntId/submissions', async (req, res) => {
+    const huntId = Number(req.params.huntId);
+    if (!Number.isInteger(huntId) || huntId <= 0) {
+      return res.status(400).json({ error: 'Invalid hunt ID.' });
+    }
+
+    try {
+      const client = getClient();
+      const hunt = await client.execute({
+        sql: 'SELECT id, name FROM hunts WHERE id = ? AND active = 1',
+        args: [huntId],
+      });
+      if (!hunt.rows.length) {
+        return res.status(404).json({ error: 'Scavenger hunt not found.' });
+      }
+
+      const result = await client.execute({
+        sql: `
+          SELECT s.id, s.team_name, s.image_url, s.caption, s.submitted_at,
+            s.approved, c.title AS challenge_title, c.sort_order
+          FROM submissions s
+          JOIN challenges c ON c.id = s.challenge_id AND c.hunt_id = s.hunt_id
+          WHERE s.hunt_id = ?
+          ORDER BY s.submitted_at DESC, s.id DESC
+        `,
+        args: [huntId],
+      });
+
+      return res.json({
+        hunt: { id: Number(hunt.rows[0].id), name: hunt.rows[0].name },
+        submissions: result.rows.map((row) => ({
+          id: Number(row.id),
+          team_name: row.team_name,
+          image_url: row.image_url,
+          caption: row.caption,
+          submitted_at: row.submitted_at,
+          approved: Number(row.approved) === 1,
+          challenge_title: row.challenge_title,
+          sort_order: Number(row.sort_order || 0),
+        })),
+      });
+    } catch (error) {
+      console.error('Event gallery fetch failed:', error);
+      return res.status(500).json({ error: 'Failed to load event gallery.' });
     }
   });
 
@@ -315,6 +448,7 @@ function createApiRouter() {
           `,
           args: [challengeId, huntId, teamName, uploadInfo.image_url, uploadInfo.cloudinary_public_id, caption, submittedAt],
         });
+        await ensureEventTeam(client, huntId, teamName);
 
         return res.status(201).json({
           success: true,
@@ -353,11 +487,12 @@ function createApiRouter() {
       const client = getClient();
       const result = await client.execute({
         sql: `
-          SELECT s.team_name, SUM(CASE WHEN s.approved = 1 THEN COALESCE(s.points_awarded, 0) ELSE 0 END) AS total_points
-          FROM submissions s
-          WHERE s.hunt_id = ?
-          GROUP BY s.team_name
-          ORDER BY total_points DESC, s.team_name ASC
+          SELECT et.team_name, COALESCE(SUM(tcs.points_awarded), 0) AS total_points, COUNT(tcs.id) AS completed_challenges
+          FROM event_teams et
+          LEFT JOIN team_challenge_scores tcs ON tcs.event_team_id = et.id
+          WHERE et.hunt_id = ?
+          GROUP BY et.id, et.team_name
+          ORDER BY total_points DESC, et.team_name ASC
         `,
         args: [huntId],
       });
@@ -366,6 +501,7 @@ function createApiRouter() {
         rank: index + 1,
         team_name: row.team_name,
         total_points: Number(row.total_points || 0),
+        completed_challenges: Number(row.completed_challenges || 0),
       }));
 
       return res.json(leaderboard);
@@ -459,6 +595,34 @@ function createApiRouter() {
     } catch (error) {
       console.error('Admin submission fetch failed:', error);
       return res.status(500).json({ error: 'Unable to load submissions.' });
+    }
+  });
+
+  router.get('/api/admin/teams', requireAdmin, async (req, res) => {
+    const huntId = getRequestedHuntId(req);
+    try {
+      const client = getClient();
+      const result = await client.execute({
+        sql: `
+          SELECT et.team_name,
+            COALESCE(SUM(tcs.points_awarded), 0) AS total_points,
+            COUNT(tcs.id) AS completed_challenges
+          FROM event_teams et
+          LEFT JOIN team_challenge_scores tcs ON tcs.event_team_id = et.id
+          WHERE (? IS NULL OR et.hunt_id = ?)
+          GROUP BY et.id, et.team_name
+          ORDER BY total_points DESC, et.team_name ASC
+        `,
+        args: [huntId, huntId],
+      });
+      return res.json(result.rows.map((row) => ({
+        team_name: row.team_name,
+        total_points: Number(row.total_points || 0),
+        completed_challenges: Number(row.completed_challenges || 0),
+      })));
+    } catch (error) {
+      console.error('Admin team scores failed:', error);
+      return res.status(500).json({ error: 'Unable to load team scores.' });
     }
   });
 
@@ -595,6 +759,10 @@ function createApiRouter() {
       }
 
       await client.execute({
+        sql: 'DELETE FROM team_challenge_scores WHERE challenge_id = ?',
+        args: [challengeId],
+      });
+      await client.execute({
         sql: 'DELETE FROM challenges WHERE id = ?',
         args: [challengeId],
       });
@@ -622,10 +790,24 @@ function createApiRouter() {
 
     try {
       const client = getClient();
+      const submission = await client.execute({
+        sql: 'SELECT hunt_id, challenge_id, team_name FROM submissions WHERE id = ?',
+        args: [submissionId],
+      });
+      if (!submission.rows.length) {
+        return res.status(404).json({ error: 'Submission not found.' });
+      }
+
       await client.execute({
         sql: `UPDATE submissions SET approved = ?, points_awarded = COALESCE(?, points_awarded) WHERE id = ?`,
         args: [approved ? 1 : 0, pointsAwarded, submissionId],
       });
+      await syncTeamChallengeScore(
+        client,
+        Number(submission.rows[0].hunt_id),
+        Number(submission.rows[0].challenge_id),
+        getTeamKey(submission.rows[0].team_name)
+      );
 
       return res.json({ success: true, message: 'Submission updated.' });
     } catch (error) {
@@ -644,7 +826,7 @@ function createApiRouter() {
     try {
       const client = getClient();
       const submission = await client.execute({
-        sql: 'SELECT cloudinary_public_id FROM submissions WHERE id = ?',
+        sql: 'SELECT cloudinary_public_id, hunt_id, challenge_id, team_name FROM submissions WHERE id = ?',
         args: [submissionId],
       });
 
@@ -666,6 +848,12 @@ function createApiRouter() {
         sql: 'DELETE FROM submissions WHERE id = ?',
         args: [submissionId],
       });
+      await syncTeamChallengeScore(
+        client,
+        Number(submission.rows[0].hunt_id),
+        Number(submission.rows[0].challenge_id),
+        getTeamKey(submission.rows[0].team_name)
+      );
 
       return res.json({ success: true, message: 'Submission deleted.' });
     } catch (error) {

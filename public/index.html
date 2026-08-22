@@ -16,6 +16,7 @@
         </div>
         <nav class="top-actions">
           <a href="/leaderboard" class="secondary-button small">Leaderboard</a>
+          <a href="/gallery" class="secondary-button small">Event Gallery</a>
           <a href="/admin" class="secondary-button small">Admin Portal</a>
           <button id="change-team-button" class="secondary-button small" type="button">Change Team</button>
         </nav>
@@ -42,6 +43,13 @@
 
       <main>
         <section id="challenge-list" class="challenge-list" aria-live="polite"></section>
+        <section class="score-panel" aria-live="polite">
+          <p class="eyebrow">Your team</p>
+          <h2 id="score-team-name">Enter a team name</h2>
+          <strong id="score-total">0</strong>
+          <span>POINTS</span>
+          <p id="score-completed">0 challenges completed</p>
+        </section>
       </main>
     </div>
 

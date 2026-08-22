@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Event Gallery</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar compact">
+        <div>
+          <p class="eyebrow">Community photos</p>
+          <h1>Event Gallery</h1>
+        </div>
+        <nav class="top-actions">
+          <a href="/" class="secondary-button small">Back to Hunt</a>
+          <a href="/leaderboard" class="secondary-button small">Leaderboard</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="team-card gallery-picker">
+          <label for="gallery-hunt-select" class="label">Choose event gallery</label>
+          <select id="gallery-hunt-select" aria-label="Choose event gallery"></select>
+          <p id="gallery-hunt-description" class="helper-text"></p>
+        </section>
+
+        <section class="gallery-heading">
+          <p class="eyebrow">All submissions</p>
+          <h2 id="gallery-event-name">Event Gallery</h2>
+          <p id="gallery-count" class="helper-text"></p>
+        </section>
+
+        <section id="gallery-grid" class="gallery-grid" aria-live="polite"></section>
+      </main>
+    </div>
+
+    <script src="/static/gallery.js"></script>
+  </body>
+</html>

@@ -5,6 +5,7 @@ const adminLoginStatus = document.getElementById('admin-login-status');
 const challengeForm = document.getElementById('challenge-form');
 const challengesList = document.getElementById('admin-challenges-list');
 const submissionsList = document.getElementById('admin-submissions-list');
+const teamScoresList = document.getElementById('admin-team-scores');
 const challengeIdInput = document.getElementById('challenge-id');
 const challengeTitleInput = document.getElementById('challenge-title');
 const challengeDescriptionInput = document.getElementById('challenge-description');
@@ -155,6 +156,13 @@ async function loadAdminDashboard() {
     });
 
     const submissions = await fetchJson(`/api/admin/submissions?hunt_id=${selectedHuntId}`);
+    const teamScores = await fetchJson(`/api/admin/teams?hunt_id=${selectedHuntId}`);
+    teamScoresList.innerHTML = teamScores.length ? teamScores.map((team) => `
+      <div class="team-score-row">
+        <strong>${team.team_name}</strong>
+        <span>${team.total_points} pts · ${team.completed_challenges} challenges</span>
+      </div>
+    `).join('') : '<div class="empty-state">No event teams yet.</div>';
     if (!submissions.length) {
       submissionsList.innerHTML = '<div class="empty-state">No submissions yet.</div>';
       return;

@@ -163,6 +163,69 @@ async function initDatabase() {
       )
     `);
 
+    await client.execute(`
+      CREATE TABLE IF NOT EXISTS event_teams (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        hunt_id INTEGER NOT NULL,
+        team_name TEXT NOT NULL,
+        team_key TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(hunt_id, team_key),
+        FOREIGN KEY(hunt_id) REFERENCES hunts(id)
+      )
+    `);
+
+    await client.execute(`
+      CREATE TABLE IF NOT EXISTS team_challenge_scores (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_team_id INTEGER NOT NULL,
+        challenge_id INTEGER NOT NULL,
+        points_awarded INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(event_team_id, challenge_id),
+        FOREIGN KEY(event_team_id) REFERENCES event_teams(id),
+        FOREIGN KEY(challenge_id) REFERENCES challenges(id)
+      )
+    `);
+
+    await client.execute('CREATE INDEX IF NOT EXISTS idx_event_teams_hunt_id ON event_teams(hunt_id)');
+    await client.execute('CREATE INDEX IF NOT EXISTS idx_team_challenge_scores_event_team_id ON team_challenge_scores(event_team_id)');
+
+    const existingTeams = await client.execute(`
+      SELECT DISTINCT hunt_id, team_name FROM submissions
+      WHERE team_name IS NOT NULL AND TRIM(team_name) != ''
+    `);
+    for (const row of existingTeams.rows) {
+      const teamName = String(row.team_name).trim();
+      const teamKey = teamName.toLowerCase();
+      await client.execute({
+        sql: 'INSERT OR IGNORE INTO event_teams (hunt_id, team_name, team_key) VALUES (?, ?, ?)',
+        args: [Number(row.hunt_id), teamName, teamKey],
+      });
+    }
+
+    const existingScores = await client.execute(`
+      SELECT s.hunt_id, s.team_name, s.challenge_id, c.points
+      FROM submissions s
+      JOIN challenges c ON c.id = s.challenge_id AND c.hunt_id = s.hunt_id
+      WHERE s.approved = 1
+      GROUP BY s.hunt_id, LOWER(TRIM(s.team_name)), s.challenge_id
+    `);
+    for (const row of existingScores.rows) {
+      const teamName = String(row.team_name).trim();
+      const teamKey = teamName.toLowerCase();
+      const team = await client.execute({
+        sql: 'SELECT id FROM event_teams WHERE hunt_id = ? AND team_key = ?',
+        args: [Number(row.hunt_id), teamKey],
+      });
+      if (team.rows.length) {
+        await client.execute({
+          sql: 'INSERT OR IGNORE INTO team_challenge_scores (event_team_id, challenge_id, points_awarded) VALUES (?, ?, ?)',
+          args: [Number(team.rows[0].id), Number(row.challenge_id), Number(row.points)],
+        });
+      }
+    }
+
     await seedChallenges();
     console.log('Database initialization complete.');
   } catch (error) {

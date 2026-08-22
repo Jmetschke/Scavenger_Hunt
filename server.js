@@ -24,6 +24,10 @@ app.get('/leaderboard', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'leaderboard.html'));
 });
 
+app.get('/gallery', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'gallery.html'));
+});
+
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
