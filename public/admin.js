@@ -14,6 +14,7 @@ const challengeActiveInput = document.getElementById('challenge-active');
 const huntForm = document.getElementById('hunt-form');
 const huntNameInput = document.getElementById('hunt-name');
 const huntDescriptionInput = document.getElementById('hunt-description');
+const huntDefaultPointsInput = document.getElementById('hunt-default-points');
 const huntActiveInput = document.getElementById('hunt-active');
 const huntsList = document.getElementById('admin-hunts-list');
 const challengeHuntInput = document.getElementById('challenge-hunt');
@@ -23,6 +24,17 @@ const currentHuntStatus = document.getElementById('current-hunt-status');
 const sectionHuntNames = document.querySelectorAll('.section-hunt-name');
 let hunts = [];
 let selectedHuntId = null;
+
+function getSelectedHunt() {
+  return hunts.find((hunt) => hunt.id === selectedHuntId);
+}
+
+function setChallengeDefaults() {
+  const selectedHunt = getSelectedHunt();
+  if (!selectedHunt) return;
+  challengePointsInput.value = String(selectedHunt.default_points);
+  challengeSortOrderInput.value = '';
+}
 
 function updateSelectedHuntContext() {
   const selectedHunt = hunts.find((hunt) => hunt.id === selectedHuntId);
@@ -72,6 +84,7 @@ async function loadAdminDashboard() {
       <div class="admin-item ${hunt.id === selectedHuntId ? 'selected-hunt' : ''}">
         <div class="admin-item-header"><strong>${hunt.name}</strong><span>${hunt.active ? 'Available' : 'Hidden'}</span></div>
         <p>${hunt.description || 'No description provided.'}</p>
+        <p><strong>New challenges start at ${hunt.default_points} points.</strong></p>
         <div class="modal-actions">
           <button class="${hunt.id === selectedHuntId ? 'primary-button' : 'secondary-button'} small" type="button" data-select-hunt="${hunt.id}">${hunt.id === selectedHuntId ? 'Editing' : 'Manage'}</button>
           <button class="secondary-button small" type="button" data-delete-hunt="${hunt.id}">Delete</button>
@@ -81,6 +94,7 @@ async function loadAdminDashboard() {
     huntsList.querySelectorAll('[data-select-hunt]').forEach((button) => button.addEventListener('click', () => {
       selectedHuntId = Number(button.dataset.selectHunt);
       challengeHuntInput.value = String(selectedHuntId);
+      setChallengeDefaults();
       loadAdminDashboard();
     }));
     huntsList.querySelectorAll('[data-delete-hunt]').forEach((button) => button.addEventListener('click', () => deleteHunt(Number(button.dataset.deleteHunt))));
@@ -300,9 +314,12 @@ challengeForm.addEventListener('submit', async (event) => {
       });
     }
 
-    challengeForm.reset();
+    challengeTitleInput.value = '';
+    challengeDescriptionInput.value = '';
+    challengeSortOrderInput.value = '';
     challengeIdInput.value = '';
     challengeActiveInput.checked = true;
+    challengePointsInput.value = payload.points;
     loadAdminDashboard();
   } catch (error) {
     setStatus(adminLoginStatus, error.message, 'error');
@@ -311,6 +328,7 @@ challengeForm.addEventListener('submit', async (event) => {
 
 challengeHuntInput.addEventListener('change', () => {
   selectedHuntId = Number(challengeHuntInput.value);
+  setChallengeDefaults();
   loadAdminDashboard();
 });
 
@@ -319,12 +337,14 @@ huntForm.addEventListener('submit', async (event) => {
   try {
     const result = await fetchJson('/api/hunts', {
       method: 'POST',
-      body: JSON.stringify({ name: huntNameInput.value.trim(), description: huntDescriptionInput.value.trim(), active: huntActiveInput.checked }),
+      body: JSON.stringify({ name: huntNameInput.value.trim(), description: huntDescriptionInput.value.trim(), default_points: Number(huntDefaultPointsInput.value), active: huntActiveInput.checked }),
     });
     selectedHuntId = result.id;
     huntForm.reset();
+    huntDefaultPointsInput.value = '5';
     huntActiveInput.checked = true;
-    loadAdminDashboard();
+    await loadAdminDashboard();
+    setChallengeDefaults();
   } catch (error) {
     setStatus(adminLoginStatus, error.message, 'error');
   }
@@ -334,6 +354,7 @@ document.getElementById('reset-challenge-form').addEventListener('click', () => 
   challengeForm.reset();
   challengeIdInput.value = '';
   challengeActiveInput.checked = true;
+  setChallengeDefaults();
   challengeTitleInput.focus();
 });
 
@@ -366,7 +387,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (response.ok) {
       adminLoginPanel.classList.add('hidden');
       adminDashboard.classList.remove('hidden');
-      loadAdminDashboard();
+      loadAdminDashboard().then(setChallengeDefaults);
     }
   } catch (error) {
     // ignore; login required

@@ -44,6 +44,8 @@
               <input id="hunt-name" type="text" maxlength="120" placeholder="Test Event 2026" required />
               <label class="label" for="hunt-description">Description</label>
               <textarea id="hunt-description" rows="2" maxlength="500" placeholder="Private practice event"></textarea>
+              <label class="label" for="hunt-default-points">Default points for new challenges</label>
+              <input id="hunt-default-points" type="number" min="0" step="1" value="5" required />
               <label class="checkbox-row"><input id="hunt-active" type="checkbox" checked /> <span>Available to participants</span></label>
               <button type="submit" class="primary-button">Create Hunt</button>
             </form>
@@ -66,8 +68,8 @@
 
                 <div class="two-column">
                   <div>
-                    <label class="label" for="challenge-points">Points</label>
-                    <input id="challenge-points" type="number" min="0" value="5" required />
+                    <label class="label" for="challenge-points">Points for this challenge</label>
+                    <input id="challenge-points" type="number" min="0" step="1" value="5" required />
                   </div>
                   <div>
                     <label class="label" for="challenge-sort-order">Sort Order <span class="optional-label">(optional)</span></label>

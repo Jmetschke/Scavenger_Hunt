@@ -68,6 +68,7 @@ function mapHunt(row) {
     id: Number(row.id),
     name: row.name,
     description: row.description,
+    default_points: Number(row.default_points || 5),
     active: Number(row.active) === 1,
     created_at: row.created_at,
   };
@@ -93,14 +94,18 @@ function createApiRouter() {
     const name = sanitizeText(req.body.name, 120);
     const description = sanitizeText(req.body.description, 500);
     const active = parseBoolean(req.body.active !== undefined ? req.body.active : true);
+    const defaultPoints = Number(req.body.default_points ?? 5);
 
     if (!name) return res.status(400).json({ error: 'Hunt name is required.' });
+    if (!Number.isInteger(defaultPoints) || defaultPoints < 0) {
+      return res.status(400).json({ error: 'Default points must be a whole number of zero or greater.' });
+    }
 
     try {
       const client = getClient();
       const result = await client.execute({
-        sql: 'INSERT INTO hunts (name, description, active) VALUES (?, ?, ?)',
-        args: [name, description, active ? 1 : 0],
+        sql: 'INSERT INTO hunts (name, description, default_points, active) VALUES (?, ?, ?, ?)',
+        args: [name, description, defaultPoints, active ? 1 : 0],
       });
       return res.status(201).json({ success: true, id: Number(result.lastInsertRowid) });
     } catch (error) {
@@ -114,16 +119,20 @@ function createApiRouter() {
     const name = sanitizeText(req.body.name, 120);
     const description = sanitizeText(req.body.description, 500);
     const active = parseBoolean(req.body.active !== undefined ? req.body.active : true);
+    const defaultPoints = Number(req.body.default_points ?? 5);
 
     if (!Number.isInteger(huntId) || huntId <= 0 || !name) {
       return res.status(400).json({ error: 'A valid hunt ID and name are required.' });
+    }
+    if (!Number.isInteger(defaultPoints) || defaultPoints < 0) {
+      return res.status(400).json({ error: 'Default points must be a whole number of zero or greater.' });
     }
 
     try {
       const client = getClient();
       await client.execute({
-        sql: 'UPDATE hunts SET name = ?, description = ?, active = ? WHERE id = ?',
-        args: [name, description, active ? 1 : 0, huntId],
+        sql: 'UPDATE hunts SET name = ?, description = ?, default_points = ?, active = ? WHERE id = ?',
+        args: [name, description, defaultPoints, active ? 1 : 0, huntId],
       });
       return res.json({ success: true });
     } catch (error) {
@@ -456,7 +465,8 @@ function createApiRouter() {
   router.post('/api/challenges', requireAdmin, async (req, res) => {
     const title = sanitizeText(req.body.title, 120);
     const description = sanitizeText(req.body.description, 500);
-    const points = Number(req.body.points || 0);
+    const hasPoints = req.body.points !== undefined && req.body.points !== null && String(req.body.points).trim() !== '';
+    const points = hasPoints ? Number(req.body.points) : null;
     const hasSortOrder = req.body.sort_order !== undefined && req.body.sort_order !== null && String(req.body.sort_order).trim() !== '';
     const sortOrder = hasSortOrder ? Number(req.body.sort_order) : null;
     const active = parseBoolean(req.body.active !== undefined ? req.body.active : true);
@@ -470,7 +480,7 @@ function createApiRouter() {
       return res.status(400).json({ error: 'A valid hunt is required.' });
     }
 
-    if (!Number.isFinite(points) || points < 0) {
+    if (hasPoints && (!Number.isFinite(points) || points < 0)) {
       return res.status(400).json({ error: 'Points must be a non-negative number.' });
     }
 
@@ -480,8 +490,9 @@ function createApiRouter() {
 
     try {
       const client = getClient();
-      const hunt = await client.execute({ sql: 'SELECT id FROM hunts WHERE id = ?', args: [huntId] });
+      const hunt = await client.execute({ sql: 'SELECT id, default_points FROM hunts WHERE id = ?', args: [huntId] });
       if (!hunt.rows.length) return res.status(404).json({ error: 'Scavenger hunt not found.' });
+      const challengePoints = hasPoints ? points : Number(hunt.rows[0].default_points || 0);
       const nextSortOrder = hasSortOrder ? sortOrder : Number((await client.execute({
         sql: 'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_sort_order FROM challenges WHERE hunt_id = ? AND active = 1',
         args: [huntId],
@@ -491,7 +502,7 @@ function createApiRouter() {
           INSERT INTO challenges (title, description, points, sort_order, active, hunt_id)
           VALUES (?, ?, ?, ?, ?, ?)
         `,
-        args: [title, description, points, nextSortOrder, active ? 1 : 0, huntId],
+        args: [title, description, challengePoints, nextSortOrder, active ? 1 : 0, huntId],
       });
 
       return res.status(201).json({ success: true, id: Number(result.lastInsertRowid), message: 'Challenge created.' });

@@ -94,22 +94,15 @@ async function initDatabase() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         description TEXT,
+        default_points INTEGER NOT NULL DEFAULT 5,
         active INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
     const huntColumns = await client.execute('PRAGMA table_info(hunts)');
-    if (!huntColumns.rows.length) {
-      await client.execute(`
-        CREATE TABLE IF NOT EXISTS hunts (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          description TEXT,
-          active INTEGER NOT NULL DEFAULT 1,
-          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
+    if (huntColumns.rows.length && !huntColumns.rows.some((row) => row.name === 'default_points')) {
+      await client.execute('ALTER TABLE hunts ADD COLUMN default_points INTEGER NOT NULL DEFAULT 5');
     }
 
     await client.execute(`
