@@ -107,6 +107,7 @@ async function initDatabase() {
         description TEXT,
         default_points INTEGER NOT NULL DEFAULT 5,
         passcode_hash TEXT,
+        access_link TEXT,
         active INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
@@ -118,6 +119,9 @@ async function initDatabase() {
     }
     if (huntColumns.rows.length && !huntColumns.rows.some((row) => row.name === 'passcode_hash')) {
       await client.execute('ALTER TABLE hunts ADD COLUMN passcode_hash TEXT');
+    }
+    if (huntColumns.rows.length && !huntColumns.rows.some((row) => row.name === 'access_link')) {
+      await client.execute('ALTER TABLE hunts ADD COLUMN access_link TEXT');
     }
 
     await client.execute(`

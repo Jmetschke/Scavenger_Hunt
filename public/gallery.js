@@ -2,10 +2,17 @@ const GALLERY_HUNT_KEY = 'festival-gallery-hunt-id';
 const HUNT_PASSCODE_KEY = 'festival-hunt-passcodes';
 const gallerySelect = document.getElementById('gallery-hunt-select');
 const galleryDescription = document.getElementById('gallery-hunt-description');
+const galleryAccessLink = document.getElementById('gallery-access-link');
 const galleryEventName = document.getElementById('gallery-event-name');
 const galleryCount = document.getElementById('gallery-count');
 const galleryGrid = document.getElementById('gallery-grid');
 let hunts = [];
+
+function updateGalleryAccessLink(hunt) {
+  galleryAccessLink.href = hunt?.access_link || '#';
+  galleryAccessLink.classList.toggle('hidden', !hunt?.access_link);
+  galleryAccessLink.textContent = hunt?.requires_passcode ? 'Where to find the event passcode' : 'Open event information';
+}
 
 function getStoredPasscodes() {
   try {
@@ -91,6 +98,7 @@ async function initializeGallery() {
     gallerySelect.innerHTML = hunts.map((hunt) => `<option value="${hunt.id}">${hunt.name}</option>`).join('');
     gallerySelect.value = String(selected.id);
     galleryDescription.textContent = selected.description || '';
+    updateGalleryAccessLink(selected);
     localStorage.setItem(GALLERY_HUNT_KEY, String(selected.id));
     if (selected.requires_passcode && !await requestHuntAccess(selected)) {
       throw new Error('Enter the event passcode to view this gallery.');
@@ -106,6 +114,7 @@ gallerySelect.addEventListener('change', async () => {
   const selected = hunts.find((hunt) => hunt.id === huntId);
   localStorage.setItem(GALLERY_HUNT_KEY, String(huntId));
   galleryDescription.textContent = selected?.description || '';
+  updateGalleryAccessLink(selected);
   if (!selected) return;
   const hasAccess = await requestHuntAccess(selected);
   if (!hasAccess) {

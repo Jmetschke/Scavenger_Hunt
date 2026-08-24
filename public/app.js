@@ -4,6 +4,7 @@ const HUNT_PASSCODE_KEY = 'festival-hunt-passcodes';
 const challengeList = document.getElementById('challenge-list');
 const huntSelect = document.getElementById('hunt-select');
 const huntDescription = document.getElementById('hunt-description');
+const huntAccessLink = document.getElementById('hunt-access-link');
 const teamNameInput = document.getElementById('team-name-input');
 const saveTeamButton = document.getElementById('save-team-button');
 const changeTeamButton = document.getElementById('change-team-button');
@@ -70,6 +71,7 @@ async function loadHunts() {
   huntSelect.innerHTML = availableHunts.map((hunt) => `<option value="${hunt.id}">${hunt.name}${hunt.active ? '' : ' (inactive)'}</option>`).join('');
   huntSelect.value = String(currentHuntId);
   huntDescription.textContent = selected.description || '';
+  updateHuntAccessLink(selected);
   if (selected.requires_passcode && !await requestHuntAccess(selected)) {
     throw new Error('Enter the event passcode to view this hunt.');
   }
@@ -137,6 +139,12 @@ function showStatus(element, message, type = '') {
 function hideStatus(element) {
   element.classList.add('hidden');
   element.textContent = '';
+}
+
+function updateHuntAccessLink(hunt) {
+  huntAccessLink.href = hunt?.access_link || '#';
+  huntAccessLink.classList.toggle('hidden', !hunt?.access_link);
+  huntAccessLink.textContent = hunt?.requires_passcode ? 'Where to find the event passcode' : 'Open event information';
 }
 
 function openModal(modal) {
@@ -429,6 +437,7 @@ huntSelect.addEventListener('change', () => {
   localStorage.setItem(HUNT_KEY, String(currentHuntId));
   const selected = availableHunts.find((hunt) => hunt.id === currentHuntId);
   huntDescription.textContent = selected?.description || '';
+  updateHuntAccessLink(selected);
   requestHuntAccess(selected).then((hasAccess) => {
     if (hasAccess) {
       loadChallenges();

@@ -17,6 +17,7 @@ const huntNameInput = document.getElementById('hunt-name');
 const huntDescriptionInput = document.getElementById('hunt-description');
 const huntDefaultPointsInput = document.getElementById('hunt-default-points');
 const huntPasscodeInput = document.getElementById('hunt-passcode');
+const huntAccessLinkInput = document.getElementById('hunt-access-link');
 const clearPasscodeRow = document.getElementById('clear-passcode-row');
 const clearPasscodeInput = document.getElementById('clear-passcode');
 const huntActiveInput = document.getElementById('hunt-active');
@@ -48,6 +49,7 @@ function resetHuntForm() {
   huntForm.reset();
   huntDefaultPointsInput.value = '5';
   huntPasscodeInput.value = '';
+  huntAccessLinkInput.value = '';
   clearPasscodeInput.checked = false;
   clearPasscodeRow.classList.add('hidden');
   huntActiveInput.checked = true;
@@ -63,6 +65,7 @@ function startHuntEdit(huntId) {
   huntDescriptionInput.value = hunt.description || '';
   huntDefaultPointsInput.value = String(hunt.default_points);
   huntPasscodeInput.value = '';
+  huntAccessLinkInput.value = hunt.access_link || '';
   clearPasscodeInput.checked = false;
   clearPasscodeRow.classList.toggle('hidden', !hunt.requires_passcode);
   huntActiveInput.checked = hunt.active;
@@ -119,6 +122,7 @@ async function loadAdminDashboard() {
         <div class="admin-item-header"><strong>${hunt.name}</strong><span>${hunt.active ? 'Available' : 'Hidden'}</span></div>
         <p>${hunt.description || 'No description provided.'}</p>
         <p><strong>New challenges start at ${hunt.default_points} points.</strong></p>
+        ${hunt.access_link ? `<p><a href="${hunt.access_link}" target="_blank" rel="noopener">Open event information link</a></p>` : ''}
         <div class="modal-actions">
           <button class="${hunt.id === selectedHuntId ? 'primary-button' : 'secondary-button'} small" type="button" data-select-hunt="${hunt.id}">${hunt.id === selectedHuntId ? 'Editing' : 'Manage'}</button>
           <button class="secondary-button small" type="button" data-edit-hunt="${hunt.id}">Edit</button>
@@ -380,7 +384,7 @@ huntForm.addEventListener('submit', async (event) => {
   try {
     const result = await fetchJson(editingHuntId ? `/api/hunts/${editingHuntId}` : '/api/hunts', {
       method: editingHuntId ? 'PUT' : 'POST',
-      body: JSON.stringify({ name: huntNameInput.value.trim(), description: huntDescriptionInput.value.trim(), default_points: Number(huntDefaultPointsInput.value), passcode: huntPasscodeInput.value.trim(), clear_passcode: clearPasscodeInput.checked, active: huntActiveInput.checked }),
+      body: JSON.stringify({ name: huntNameInput.value.trim(), description: huntDescriptionInput.value.trim(), default_points: Number(huntDefaultPointsInput.value), passcode: huntPasscodeInput.value.trim(), clear_passcode: clearPasscodeInput.checked, access_link: huntAccessLinkInput.value.trim(), active: huntActiveInput.checked }),
     });
     if (!editingHuntId) selectedHuntId = result.id;
     resetHuntForm();

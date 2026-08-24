@@ -27,6 +27,18 @@ function sanitizeText(value, maxLength = 200) {
   return cleaned.replace(/[<>]/g, '');
 }
 
+function sanitizeAccessLink(value) {
+  const link = sanitizeText(value, 500);
+  if (!link) return '';
+
+  try {
+    const url = new URL(link);
+    return ['http:', 'https:'].includes(url.protocol) ? url.toString() : '';
+  } catch (error) {
+    return '';
+  }
+}
+
 function parseBoolean(value) {
   if (value === true || value === 'true' || value === 1 || value === '1') {
     return true;
@@ -96,6 +108,7 @@ function mapHunt(row) {
     description: row.description,
     default_points: Number(row.default_points || 5),
     requires_passcode: Boolean(row.passcode_hash),
+    access_link: row.access_link || '',
     active: Number(row.active) === 1,
     created_at: row.created_at,
   };
@@ -258,17 +271,21 @@ function createApiRouter() {
     const active = parseBoolean(req.body.active !== undefined ? req.body.active : true);
     const defaultPoints = Number(req.body.default_points ?? 5);
     const passcode = sanitizeText(req.body.passcode, 120);
+    const accessLink = sanitizeAccessLink(req.body.access_link);
 
     if (!name) return res.status(400).json({ error: 'Hunt name is required.' });
     if (!Number.isInteger(defaultPoints) || defaultPoints < 0) {
       return res.status(400).json({ error: 'Default points must be a whole number of zero or greater.' });
     }
+    if (req.body.access_link && !accessLink) {
+      return res.status(400).json({ error: 'Access link must be a valid HTTP or HTTPS URL.' });
+    }
 
     try {
       const client = getClient();
       const result = await client.execute({
-        sql: 'INSERT INTO hunts (name, description, default_points, passcode_hash, active) VALUES (?, ?, ?, ?, ?)',
-        args: [name, description, defaultPoints, passcode ? hashHuntPasscode(passcode) : null, active ? 1 : 0],
+        sql: 'INSERT INTO hunts (name, description, default_points, passcode_hash, access_link, active) VALUES (?, ?, ?, ?, ?, ?)',
+        args: [name, description, defaultPoints, passcode ? hashHuntPasscode(passcode) : null, accessLink || null, active ? 1 : 0],
       });
       return res.status(201).json({ success: true, id: Number(result.lastInsertRowid) });
     } catch (error) {
@@ -284,6 +301,7 @@ function createApiRouter() {
     const active = parseBoolean(req.body.active !== undefined ? req.body.active : true);
     const defaultPoints = Number(req.body.default_points ?? 5);
     const passcode = sanitizeText(req.body.passcode, 120);
+    const accessLink = sanitizeAccessLink(req.body.access_link);
     const clearPasscode = req.body.clear_passcode === true || req.body.clear_passcode === 'true';
 
     if (!Number.isInteger(huntId) || huntId <= 0 || !name) {
@@ -292,14 +310,17 @@ function createApiRouter() {
     if (!Number.isInteger(defaultPoints) || defaultPoints < 0) {
       return res.status(400).json({ error: 'Default points must be a whole number of zero or greater.' });
     }
+    if (req.body.access_link && !accessLink) {
+      return res.status(400).json({ error: 'Access link must be a valid HTTP or HTTPS URL.' });
+    }
 
     try {
       const client = getClient();
       await client.execute({
-        sql: `UPDATE hunts SET name = ?, description = ?, default_points = ?, active = ?${passcode || clearPasscode ? ', passcode_hash = ?' : ''} WHERE id = ?`,
+        sql: `UPDATE hunts SET name = ?, description = ?, default_points = ?, access_link = ?, active = ?${passcode || clearPasscode ? ', passcode_hash = ?' : ''} WHERE id = ?`,
         args: passcode || clearPasscode
-          ? [name, description, defaultPoints, active ? 1 : 0, passcode ? hashHuntPasscode(passcode) : null, huntId]
-          : [name, description, defaultPoints, active ? 1 : 0, huntId],
+          ? [name, description, defaultPoints, accessLink || null, active ? 1 : 0, passcode ? hashHuntPasscode(passcode) : null, huntId]
+          : [name, description, defaultPoints, accessLink || null, active ? 1 : 0, huntId],
       });
       return res.json({ success: true });
     } catch (error) {
