@@ -770,8 +770,47 @@ function createApiRouter() {
       return res.status(400).json({ error: 'Points must be a non-negative number.' });
     }
 
+    if (!Number.isInteger(sortOrder) || sortOrder < 1) {
+      return res.status(400).json({ error: 'Sort order must be a positive whole number.' });
+    }
+
     try {
       const client = getClient();
+      const existing = await client.execute({
+        sql: 'SELECT hunt_id, sort_order FROM challenges WHERE id = ?',
+        args: [challengeId],
+      });
+      if (!existing.rows.length) {
+        return res.status(404).json({ error: 'Challenge not found.' });
+      }
+
+      const previousHuntId = Number(existing.rows[0].hunt_id);
+      const previousSortOrder = Number(existing.rows[0].sort_order);
+      const targetHuntId = huntId || previousHuntId;
+
+      if (targetHuntId === previousHuntId) {
+        if (sortOrder < previousSortOrder) {
+          await client.execute({
+            sql: 'UPDATE challenges SET sort_order = sort_order + 1 WHERE hunt_id = ? AND sort_order >= ? AND sort_order < ? AND id != ?',
+            args: [targetHuntId, sortOrder, previousSortOrder, challengeId],
+          });
+        } else if (sortOrder > previousSortOrder) {
+          await client.execute({
+            sql: 'UPDATE challenges SET sort_order = sort_order - 1 WHERE hunt_id = ? AND sort_order > ? AND sort_order <= ? AND id != ?',
+            args: [targetHuntId, previousSortOrder, sortOrder, challengeId],
+          });
+        }
+      } else {
+        await client.execute({
+          sql: 'UPDATE challenges SET sort_order = sort_order - 1 WHERE hunt_id = ? AND sort_order > ? AND id != ?',
+          args: [previousHuntId, previousSortOrder, challengeId],
+        });
+        await client.execute({
+          sql: 'UPDATE challenges SET sort_order = sort_order + 1 WHERE hunt_id = ? AND sort_order >= ?',
+          args: [targetHuntId, sortOrder],
+        });
+      }
+
       await client.execute({
         sql: `
           UPDATE challenges
