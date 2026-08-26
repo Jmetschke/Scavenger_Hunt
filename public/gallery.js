@@ -73,6 +73,7 @@ async function loadGallery(huntId) {
         <strong>${entry.team_name}</strong>
         <span>${entry.challenge_title}</span>
         ${entry.caption ? `<p>${entry.caption}</p>` : ''}
+        ${entry.comment ? `<p><strong>Comment:</strong> ${entry.comment}</p>` : ''}
         <small>${formatDate(entry.submitted_at)}</small>
       </div>
     </article>

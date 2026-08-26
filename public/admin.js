@@ -198,6 +198,7 @@ async function loadAdminDashboard() {
           </div>
         </div>
         <p>${entry.caption || 'No caption.'}</p>
+        <p>${entry.comment ? `<strong>Comment:</strong> ${entry.comment}` : 'No comment.'}</p>
         <div class="modal-actions">
           <button class="secondary-button small" type="button" data-set-approved="${entry.id}" data-approved="true">Approve</button>
           <button class="secondary-button small" type="button" data-set-approved="${entry.id}" data-approved="false">Reject</button>

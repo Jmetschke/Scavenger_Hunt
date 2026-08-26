@@ -268,6 +268,7 @@ async function openEntriesModal(challengeId) {
         <div class="entry-meta">
           <strong>${entry.team_name}</strong>
           ${entry.caption ? `<p>${entry.caption}</p>` : '<p>No caption added.</p>'}
+          ${entry.comment ? `<p><strong>Comment:</strong> ${entry.comment}</p>` : ''}
           <small>${formatDisplayDate(entry.submitted_at)}</small>
         </div>
       </article>
@@ -357,6 +358,7 @@ submissionForm.addEventListener('submit', async (event) => {
   const file = imageInput.files && imageInput.files[0];
   const teamName = teamNameForm.value.trim();
   const caption = document.getElementById('caption-input').value.trim();
+  const comment = document.getElementById('comment-input').value.trim();
   const challengeId = challengeIdInput.value;
 
   if (!challengeId) {
@@ -384,6 +386,7 @@ submissionForm.addEventListener('submit', async (event) => {
   formData.append('hunt_id', String(currentHuntId));
   formData.append('team_name', teamName);
   formData.append('caption', caption);
+  formData.append('comment', comment);
   formData.append('image', file);
 
   try {

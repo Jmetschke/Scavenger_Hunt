@@ -151,6 +151,7 @@ async function initDatabase() {
         image_url TEXT NOT NULL,
         cloudinary_public_id TEXT NOT NULL,
         caption TEXT,
+        comment TEXT,
         submitted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         approved INTEGER NOT NULL DEFAULT 0,
         points_awarded INTEGER NOT NULL DEFAULT 0,
@@ -161,6 +162,9 @@ async function initDatabase() {
     const submissionColumns = await client.execute('PRAGMA table_info(submissions)');
     if (submissionColumns.rows.length && !submissionColumns.rows.some((row) => row.name === 'hunt_id')) {
       await client.execute('ALTER TABLE submissions ADD COLUMN hunt_id INTEGER NOT NULL DEFAULT 1');
+    }
+    if (submissionColumns.rows.length && !submissionColumns.rows.some((row) => row.name === 'comment')) {
+      await client.execute('ALTER TABLE submissions ADD COLUMN comment TEXT');
     }
 
     await client.execute(`

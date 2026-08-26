@@ -236,7 +236,7 @@ function createApiRouter() {
 
       const result = await client.execute({
         sql: `
-          SELECT s.id, s.team_name, s.image_url, s.caption, s.submitted_at,
+          SELECT s.id, s.team_name, s.image_url, s.caption, s.comment, s.submitted_at,
             s.approved, c.title AS challenge_title, c.sort_order
           FROM submissions s
           JOIN challenges c ON c.id = s.challenge_id AND c.hunt_id = s.hunt_id
@@ -253,6 +253,7 @@ function createApiRouter() {
           team_name: row.team_name,
           image_url: row.image_url,
           caption: row.caption,
+          comment: row.comment,
           submitted_at: row.submitted_at,
           approved: Number(row.approved) === 1,
           challenge_title: row.challenge_title,
@@ -433,6 +434,7 @@ function createApiRouter() {
           image_url: row.image_url,
           cloudinary_public_id: row.cloudinary_public_id,
           caption: row.caption,
+          comment: row.comment,
           submitted_at: row.submitted_at,
           approved: Number(row.approved) === 1,
           points_awarded: Number(row.points_awarded || 0),
@@ -486,6 +488,7 @@ function createApiRouter() {
 
       const teamName = sanitizeText(req.body.team_name || req.body.teamName, 80) || 'Anonymous Team';
       const caption = sanitizeText(req.body.caption, 240);
+      const comment = sanitizeText(req.body.comment, 500);
 
       let uploadInfo = null;
       if (!hasCloudinaryConfig()) {
@@ -504,10 +507,10 @@ function createApiRouter() {
       try {
         const result = await client.execute({
           sql: `
-            INSERT INTO submissions (challenge_id, hunt_id, team_name, image_url, cloudinary_public_id, caption, submitted_at, approved, points_awarded)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0)
+            INSERT INTO submissions (challenge_id, hunt_id, team_name, image_url, cloudinary_public_id, caption, comment, submitted_at, approved, points_awarded)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
           `,
-          args: [challengeId, huntId, teamName, uploadInfo.image_url, uploadInfo.cloudinary_public_id, caption, submittedAt],
+          args: [challengeId, huntId, teamName, uploadInfo.image_url, uploadInfo.cloudinary_public_id, caption, comment, submittedAt],
         });
         await ensureEventTeam(client, huntId, teamName);
 
@@ -520,6 +523,7 @@ function createApiRouter() {
             team_name: teamName,
             image_url: uploadInfo.image_url,
             caption,
+            comment,
             submitted_at: submittedAt,
           },
         });
@@ -650,6 +654,7 @@ function createApiRouter() {
         image_url: row.image_url,
         cloudinary_public_id: row.cloudinary_public_id,
         caption: row.caption,
+        comment: row.comment,
         submitted_at: row.submitted_at,
         approved: Number(row.approved) === 1,
         points_awarded: Number(row.points_awarded || 0),
@@ -723,6 +728,12 @@ function createApiRouter() {
         sql: 'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_sort_order FROM challenges WHERE hunt_id = ? AND active = 1',
         args: [huntId],
       })).rows[0].next_sort_order);
+      if (hasSortOrder) {
+        await client.execute({
+          sql: 'UPDATE challenges SET sort_order = sort_order + 1 WHERE hunt_id = ? AND sort_order >= ?',
+          args: [huntId, nextSortOrder],
+        });
+      }
       const result = await client.execute({
         sql: `
           INSERT INTO challenges (title, description, points, sort_order, active, hunt_id)
