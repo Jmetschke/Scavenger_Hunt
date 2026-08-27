@@ -42,7 +42,7 @@ function getStoredHuntId() {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
-async function loadGallery(huntId) {
+async function loadGallery(huntId, retry = true) {
   galleryGrid.innerHTML = '<div class="empty-state">Loading photos...</div>';
   const response = await fetch(`/api/hunts/${huntId}/submissions`, {
     headers: { 'X-Hunt-Passcode': getStoredPasscodes()[huntId] || '' },
@@ -53,7 +53,7 @@ async function loadGallery(huntId) {
     delete stored[huntId];
     localStorage.setItem(HUNT_PASSCODE_KEY, JSON.stringify(stored));
     const hunt = hunts.find((item) => item.id === huntId);
-    if (hunt && await requestHuntAccess(hunt)) return loadGallery(huntId);
+    if (hunt && retry && await requestHuntAccess(hunt)) return loadGallery(huntId, false);
   }
   if (!response.ok) throw new Error(result.error || 'Unable to load this event gallery.');
 

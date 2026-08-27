@@ -36,6 +36,7 @@ const sectionHuntNames = document.querySelectorAll('.section-hunt-name');
 let hunts = [];
 let selectedHuntId = null;
 let editingHuntId = null;
+let dashboardLoadInProgress = false;
 
 function getSelectedHunt() {
   return hunts.find((hunt) => hunt.id === selectedHuntId);
@@ -131,7 +132,20 @@ async function fetchForm(url, formData, method) {
   return data;
 }
 
+function setButtonBusy(button, busy, busyLabel = 'Working...') {
+  if (busy) {
+    button.dataset.defaultLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = busyLabel;
+    return;
+  }
+  button.disabled = false;
+  button.textContent = button.dataset.defaultLabel || button.textContent;
+}
+
 async function loadAdminDashboard() {
+  if (dashboardLoadInProgress) return;
+  dashboardLoadInProgress = true;
   try {
     hunts = await fetchJson('/api/hunts?include_inactive=true');
     if (!selectedHuntId || !hunts.some((hunt) => hunt.id === selectedHuntId)) selectedHuntId = hunts[0]?.id;
@@ -151,16 +165,28 @@ async function loadAdminDashboard() {
         </div>
       </div>
     `).join('');
-    huntsList.querySelectorAll('[data-select-hunt]').forEach((button) => button.addEventListener('click', () => {
+    huntsList.querySelectorAll('[data-select-hunt]').forEach((button) => button.addEventListener('click', async () => {
+      setButtonBusy(button, true, 'Loading...');
       selectedHuntId = Number(button.dataset.selectHunt);
       challengeHuntInput.value = String(selectedHuntId);
       setChallengeDefaults();
-      loadAdminDashboard();
+      try {
+        await loadAdminDashboard();
+      } finally {
+        setButtonBusy(button, false);
+      }
     }));
-    huntsList.querySelectorAll('[data-delete-hunt]').forEach((button) => button.addEventListener('click', () => deleteHunt(Number(button.dataset.deleteHunt))));
+    huntsList.querySelectorAll('[data-delete-hunt]').forEach((button) => button.addEventListener('click', async () => {
+      setButtonBusy(button, true, 'Deleting...');
+      try { await deleteHunt(Number(button.dataset.deleteHunt)); } finally { setButtonBusy(button, false); }
+    }));
     huntsList.querySelectorAll('[data-edit-hunt]').forEach((button) => button.addEventListener('click', () => startHuntEdit(Number(button.dataset.editHunt))));
 
-    const challenges = await fetchJson(`/api/admin/challenges?hunt_id=${selectedHuntId}`);
+    const [challenges, submissions, teamScores] = await Promise.all([
+      fetchJson(`/api/admin/challenges?hunt_id=${selectedHuntId}`),
+      fetchJson(`/api/admin/submissions?hunt_id=${selectedHuntId}`),
+      fetchJson(`/api/admin/teams?hunt_id=${selectedHuntId}`),
+    ]);
     challengesList.innerHTML = challenges.length ? challenges.map((challenge) => `
       <div class="admin-item">
         <div class="admin-item-header">
@@ -182,15 +208,19 @@ async function loadAdminDashboard() {
     });
 
     challengesList.querySelectorAll('[data-toggle-challenge]').forEach((button) => {
-      button.addEventListener('click', () => toggleChallenge(Number(button.dataset.toggleChallenge)));
+      button.addEventListener('click', async () => {
+        setButtonBusy(button, true, 'Saving...');
+        try { await toggleChallenge(Number(button.dataset.toggleChallenge)); } finally { setButtonBusy(button, false); }
+      });
     });
 
     challengesList.querySelectorAll('[data-delete-challenge]').forEach((button) => {
-      button.addEventListener('click', () => deleteChallenge(Number(button.dataset.deleteChallenge)));
+      button.addEventListener('click', async () => {
+        setButtonBusy(button, true, 'Deleting...');
+        try { await deleteChallenge(Number(button.dataset.deleteChallenge)); } finally { setButtonBusy(button, false); }
+      });
     });
 
-    const submissions = await fetchJson(`/api/admin/submissions?hunt_id=${selectedHuntId}`);
-    const teamScores = await fetchJson(`/api/admin/teams?hunt_id=${selectedHuntId}`);
     teamScoresList.innerHTML = teamScores.length ? teamScores.map((team) => `
       <div class="team-score-row">
         <strong>${team.team_name}</strong>
@@ -234,11 +264,17 @@ async function loadAdminDashboard() {
     `).join('');
 
     submissionsList.querySelectorAll('[data-set-approved]').forEach((button) => {
-      button.addEventListener('click', () => updateSubmissionApproval(Number(button.dataset.setApproved), button.dataset.approved === 'true'));
+      button.addEventListener('click', async () => {
+        setButtonBusy(button, true, 'Saving...');
+        try { await updateSubmissionApproval(Number(button.dataset.setApproved), button.dataset.approved === 'true'); } finally { setButtonBusy(button, false); }
+      });
     });
 
     submissionsList.querySelectorAll('[data-delete-submission]').forEach((button) => {
-      button.addEventListener('click', () => deleteSubmission(Number(button.dataset.deleteSubmission)));
+      button.addEventListener('click', async () => {
+        setButtonBusy(button, true, 'Deleting...');
+        try { await deleteSubmission(Number(button.dataset.deleteSubmission)); } finally { setButtonBusy(button, false); }
+      });
     });
 
     submissionsList.querySelectorAll('[data-save-points]').forEach((button) => {
@@ -246,11 +282,14 @@ async function loadAdminDashboard() {
         const id = Number(button.dataset.savePoints);
         const input = document.querySelector(`[data-points-input="${id}"]`);
         if (!input) return;
-        updateSubmissionPoints(id, Number(input.value || 0));
+        setButtonBusy(button, true, 'Saving...');
+        updateSubmissionPoints(id, Number(input.value || 0)).finally(() => setButtonBusy(button, false));
       });
     });
   } catch (error) {
     challengesList.innerHTML = `<div class="empty-state">${error.message}</div>`;
+  } finally {
+    dashboardLoadInProgress = false;
   }
 }
 
@@ -360,6 +399,8 @@ async function deleteSubmission(submissionId) {
 
 challengeForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  const submitButton = challengeForm.querySelector('button[type="submit"]');
+  setButtonBusy(submitButton, true, 'Saving...');
 
   const payload = {
     hunt_id: Number(challengeHuntInput.value),
@@ -392,6 +433,8 @@ challengeForm.addEventListener('submit', async (event) => {
     loadAdminDashboard();
   } catch (error) {
     setStatus(adminLoginStatus, error.message, 'error');
+  } finally {
+    setButtonBusy(submitButton, false);
   }
 });
 
@@ -403,6 +446,7 @@ challengeHuntInput.addEventListener('change', () => {
 
 huntForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  setButtonBusy(saveHuntButton, true, 'Saving...');
   try {
     const formData = new FormData(huntForm);
     const result = await fetchForm(editingHuntId ? `/api/hunts/${editingHuntId}` : '/api/hunts', formData, editingHuntId ? 'PUT' : 'POST');
@@ -412,6 +456,8 @@ huntForm.addEventListener('submit', async (event) => {
     setChallengeDefaults();
   } catch (error) {
     setStatus(adminLoginStatus, error.message, 'error');
+  } finally {
+    setButtonBusy(saveHuntButton, false);
   }
 });
 
@@ -436,6 +482,8 @@ document.getElementById('reset-challenge-form').addEventListener('click', () => 
 adminLoginForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const password = document.getElementById('admin-password').value;
+  const submitButton = adminLoginForm.querySelector('button[type="submit"]');
+  setButtonBusy(submitButton, true, 'Signing in...');
 
   try {
     await fetchJson('/api/admin/login', {
@@ -449,6 +497,8 @@ adminLoginForm.addEventListener('submit', async (event) => {
     loadAdminDashboard();
   } catch (error) {
     setStatus(adminLoginStatus, error.message, 'error');
+  } finally {
+    setButtonBusy(submitButton, false);
   }
 });
 
