@@ -25,10 +25,17 @@ const teamBannerName = document.getElementById('team-banner-name');
 const scoreTeamName = document.getElementById('score-team-name');
 const scoreTotal = document.getElementById('score-total');
 const scoreCompleted = document.getElementById('score-completed');
+const eventWelcomeImage = document.getElementById('event-welcome-image');
+const eventWelcomeName = document.getElementById('event-welcome-name');
+const eventWelcomeDescription = document.getElementById('event-welcome-description');
+const eventPickerModal = document.getElementById('event-picker-modal');
+const eventPickerForm = document.getElementById('event-picker-form');
+const eventPickerSelect = document.getElementById('event-picker-select');
 
 let currentHuntId = null;
 let availableHunts = [];
 let scoreRefreshTimer = null;
+let shouldPromptForHunt = false;
 
 function getStoredPasscodes() {
   try {
@@ -65,16 +72,46 @@ async function loadHunts() {
   if (!availableHunts.length) throw new Error('No scavenger hunts have been created yet.');
 
   const storedId = getStoredHuntId();
+  shouldPromptForHunt = !storedId;
   const selected = availableHunts.find((hunt) => hunt.id === storedId) || availableHunts.find((hunt) => hunt.active) || availableHunts[0];
   currentHuntId = selected.id;
   localStorage.setItem(HUNT_KEY, String(currentHuntId));
   huntSelect.innerHTML = availableHunts.map((hunt) => `<option value="${hunt.id}">${hunt.name}${hunt.active ? '' : ' (inactive)'}</option>`).join('');
+  eventPickerSelect.innerHTML = availableHunts.map((hunt) => `<option value="${hunt.id}">${hunt.name}</option>`).join('');
   huntSelect.value = String(currentHuntId);
+  eventPickerSelect.value = String(currentHuntId);
   huntDescription.textContent = selected.description || '';
+  updateHuntWelcome(selected);
   updateHuntAccessLink(selected);
   if (selected.requires_passcode && !await requestHuntAccess(selected)) {
     throw new Error('Enter the event passcode to view this hunt.');
   }
+}
+
+function updateHuntWelcome(hunt) {
+  eventWelcomeName.textContent = hunt?.name || 'Choose an event';
+  eventWelcomeDescription.textContent = hunt?.description || '';
+  eventWelcomeImage.src = hunt?.welcome_image_url || '';
+  eventWelcomeImage.alt = hunt?.name ? `${hunt.name} welcome banner` : '';
+  eventWelcomeImage.classList.toggle('hidden', !hunt?.welcome_image_url);
+}
+
+async function activateHunt(huntId) {
+  const selected = availableHunts.find((hunt) => hunt.id === huntId);
+  if (!selected) return false;
+  currentHuntId = selected.id;
+  localStorage.setItem(HUNT_KEY, String(currentHuntId));
+  huntSelect.value = String(currentHuntId);
+  eventPickerSelect.value = String(currentHuntId);
+  huntDescription.textContent = selected.description || '';
+  updateHuntWelcome(selected);
+  updateHuntAccessLink(selected);
+  if (!await requestHuntAccess(selected)) {
+    challengeList.innerHTML = '<div class="empty-state">Enter the event passcode to view this hunt.</div>';
+    return false;
+  }
+  await Promise.all([loadChallenges(), loadTeamScore()]);
+  return true;
 }
 
 function syncTeamBanner() {
@@ -430,23 +467,20 @@ window.addEventListener('DOMContentLoaded', () => {
 
   syncTeamBanner();
   bindModalClosers();
-  loadHunts().then(() => Promise.all([loadChallenges(), loadTeamScore()])).catch((error) => {
+  loadHunts().then(async () => {
+    if (shouldPromptForHunt) openModal(eventPickerModal);
+    await Promise.all([loadChallenges(), loadTeamScore()]);
+  }).catch((error) => {
     challengeList.innerHTML = `<div class="empty-state">${error.message}</div>`;
   });
 });
 
 huntSelect.addEventListener('change', () => {
-  currentHuntId = Number(huntSelect.value);
-  localStorage.setItem(HUNT_KEY, String(currentHuntId));
-  const selected = availableHunts.find((hunt) => hunt.id === currentHuntId);
-  huntDescription.textContent = selected?.description || '';
-  updateHuntAccessLink(selected);
-  requestHuntAccess(selected).then((hasAccess) => {
-    if (hasAccess) {
-      loadChallenges();
-      loadTeamScore();
-    } else {
-      challengeList.innerHTML = '<div class="empty-state">Enter the event passcode to view this hunt.</div>';
-    }
-  });
+  activateHunt(Number(huntSelect.value));
+});
+
+eventPickerForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const entered = await activateHunt(Number(eventPickerSelect.value));
+  if (entered) closeModal(eventPickerModal);
 });

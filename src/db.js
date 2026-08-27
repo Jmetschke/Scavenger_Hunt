@@ -108,6 +108,8 @@ async function initDatabase() {
         default_points INTEGER NOT NULL DEFAULT 5,
         passcode_hash TEXT,
         access_link TEXT,
+        welcome_image_url TEXT,
+        welcome_image_public_id TEXT,
         active INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
@@ -122,6 +124,12 @@ async function initDatabase() {
     }
     if (huntColumns.rows.length && !huntColumns.rows.some((row) => row.name === 'access_link')) {
       await client.execute('ALTER TABLE hunts ADD COLUMN access_link TEXT');
+    }
+    if (huntColumns.rows.length && !huntColumns.rows.some((row) => row.name === 'welcome_image_url')) {
+      await client.execute('ALTER TABLE hunts ADD COLUMN welcome_image_url TEXT');
+    }
+    if (huntColumns.rows.length && !huntColumns.rows.some((row) => row.name === 'welcome_image_public_id')) {
+      await client.execute('ALTER TABLE hunts ADD COLUMN welcome_image_public_id TEXT');
     }
 
     await client.execute(`

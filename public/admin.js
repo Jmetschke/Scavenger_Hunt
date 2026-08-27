@@ -18,6 +18,10 @@ const huntDescriptionInput = document.getElementById('hunt-description');
 const huntDefaultPointsInput = document.getElementById('hunt-default-points');
 const huntPasscodeInput = document.getElementById('hunt-passcode');
 const huntAccessLinkInput = document.getElementById('hunt-access-link');
+const huntWelcomeImageInput = document.getElementById('hunt-welcome-image');
+const huntWelcomeImagePreview = document.getElementById('hunt-welcome-image-preview');
+const clearWelcomeImageRow = document.getElementById('clear-welcome-image-row');
+const clearWelcomeImageInput = document.getElementById('clear-welcome-image');
 const clearPasscodeRow = document.getElementById('clear-passcode-row');
 const clearPasscodeInput = document.getElementById('clear-passcode');
 const huntActiveInput = document.getElementById('hunt-active');
@@ -50,6 +54,11 @@ function resetHuntForm() {
   huntDefaultPointsInput.value = '5';
   huntPasscodeInput.value = '';
   huntAccessLinkInput.value = '';
+  huntWelcomeImageInput.value = '';
+  huntWelcomeImagePreview.src = '';
+  huntWelcomeImagePreview.classList.add('hidden');
+  clearWelcomeImageInput.checked = false;
+  clearWelcomeImageRow.classList.add('hidden');
   clearPasscodeInput.checked = false;
   clearPasscodeRow.classList.add('hidden');
   huntActiveInput.checked = true;
@@ -66,6 +75,11 @@ function startHuntEdit(huntId) {
   huntDefaultPointsInput.value = String(hunt.default_points);
   huntPasscodeInput.value = '';
   huntAccessLinkInput.value = hunt.access_link || '';
+  huntWelcomeImageInput.value = '';
+  huntWelcomeImagePreview.src = hunt.welcome_image_url || '';
+  huntWelcomeImagePreview.classList.toggle('hidden', !hunt.welcome_image_url);
+  clearWelcomeImageInput.checked = false;
+  clearWelcomeImageRow.classList.toggle('hidden', !hunt.welcome_image_url);
   clearPasscodeInput.checked = false;
   clearPasscodeRow.classList.toggle('hidden', !hunt.requires_passcode);
   huntActiveInput.checked = hunt.active;
@@ -107,6 +121,13 @@ async function fetchJson(url, options = {}) {
     throw new Error(data.error || 'Request failed.');
   }
 
+  return data;
+}
+
+async function fetchForm(url, formData, method) {
+  const response = await fetch(url, { method, body: formData });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || 'Request failed.');
   return data;
 }
 
@@ -383,10 +404,8 @@ challengeHuntInput.addEventListener('change', () => {
 huntForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   try {
-    const result = await fetchJson(editingHuntId ? `/api/hunts/${editingHuntId}` : '/api/hunts', {
-      method: editingHuntId ? 'PUT' : 'POST',
-      body: JSON.stringify({ name: huntNameInput.value.trim(), description: huntDescriptionInput.value.trim(), default_points: Number(huntDefaultPointsInput.value), passcode: huntPasscodeInput.value.trim(), clear_passcode: clearPasscodeInput.checked, access_link: huntAccessLinkInput.value.trim(), active: huntActiveInput.checked }),
-    });
+    const formData = new FormData(huntForm);
+    const result = await fetchForm(editingHuntId ? `/api/hunts/${editingHuntId}` : '/api/hunts', formData, editingHuntId ? 'PUT' : 'POST');
     if (!editingHuntId) selectedHuntId = result.id;
     resetHuntForm();
     await loadAdminDashboard();
@@ -397,6 +416,14 @@ huntForm.addEventListener('submit', async (event) => {
 });
 
 resetHuntButton.addEventListener('click', resetHuntForm);
+
+huntWelcomeImageInput.addEventListener('change', () => {
+  const file = huntWelcomeImageInput.files && huntWelcomeImageInput.files[0];
+  if (!file) return;
+  huntWelcomeImagePreview.src = URL.createObjectURL(file);
+  huntWelcomeImagePreview.classList.remove('hidden');
+  clearWelcomeImageInput.checked = false;
+});
 
 document.getElementById('reset-challenge-form').addEventListener('click', () => {
   challengeForm.reset();

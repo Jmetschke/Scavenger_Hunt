@@ -41,17 +41,21 @@
             <h2>Manage Scavenger Hunts</h2>
             <form id="hunt-form" class="stack-form">
               <label class="label" for="hunt-name">Event name</label>
-              <input id="hunt-name" type="text" maxlength="120" placeholder="Test Event 2026" required />
+              <input id="hunt-name" name="name" type="text" maxlength="120" placeholder="Test Event 2026" required />
               <label class="label" for="hunt-description">Description</label>
-              <textarea id="hunt-description" rows="2" maxlength="500" placeholder="Private practice event"></textarea>
+              <textarea id="hunt-description" name="description" rows="2" maxlength="500" placeholder="Private practice event"></textarea>
               <label class="label" for="hunt-default-points">Default points for new challenges</label>
-              <input id="hunt-default-points" type="number" min="0" step="1" value="5" required />
+              <input id="hunt-default-points" name="default_points" type="number" min="0" step="1" value="5" required />
               <label class="label" for="hunt-passcode">Event passcode <span class="optional-label">(optional)</span></label>
-              <input id="hunt-passcode" type="text" maxlength="120" placeholder="Leave blank for no passcode" autocomplete="off" />
-              <label id="clear-passcode-row" class="checkbox-row hidden"><input id="clear-passcode" type="checkbox" /> <span>Remove existing passcode</span></label>
+              <input id="hunt-passcode" name="passcode" type="text" maxlength="120" placeholder="Leave blank for no passcode" autocomplete="off" />
+              <label id="clear-passcode-row" class="checkbox-row hidden"><input id="clear-passcode" name="clear_passcode" type="checkbox" /> <span>Remove existing passcode</span></label>
               <label class="label" for="hunt-access-link">Passcode or event information link <span class="optional-label">(optional)</span></label>
-              <input id="hunt-access-link" type="url" maxlength="500" placeholder="https://facebook.com/groups/your-group" inputmode="url" />
-              <label class="checkbox-row"><input id="hunt-active" type="checkbox" checked /> <span>Available to participants</span></label>
+              <input id="hunt-access-link" name="access_link" type="url" maxlength="500" placeholder="https://facebook.com/groups/your-group" inputmode="url" />
+              <label class="label" for="hunt-welcome-image">Welcome banner image <span class="optional-label">(optional)</span></label>
+              <input id="hunt-welcome-image" name="welcome_image" type="file" accept="image/*" />
+              <img id="hunt-welcome-image-preview" class="hunt-image-preview hidden" alt="Event welcome banner preview" />
+              <label id="clear-welcome-image-row" class="checkbox-row hidden"><input id="clear-welcome-image" name="clear_welcome_image" type="checkbox" /> <span>Remove existing welcome image</span></label>
+              <label class="checkbox-row"><input id="hunt-active" name="active" type="checkbox" checked /> <span>Available to participants</span></label>
               <div class="modal-actions">
                 <button id="save-hunt-button" type="submit" class="primary-button">Create Hunt</button>
                 <button id="reset-hunt-form" type="button" class="secondary-button">Clear</button>

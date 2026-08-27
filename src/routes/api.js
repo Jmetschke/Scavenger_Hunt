@@ -40,7 +40,7 @@ function sanitizeAccessLink(value) {
 }
 
 function parseBoolean(value) {
-  if (value === true || value === 'true' || value === 1 || value === '1') {
+  if (value === true || value === 'true' || value === 'on' || value === 1 || value === '1') {
     return true;
   }
   return false;
@@ -109,6 +109,7 @@ function mapHunt(row) {
     default_points: Number(row.default_points || 5),
     requires_passcode: Boolean(row.passcode_hash),
     access_link: row.access_link || '',
+    welcome_image_url: row.welcome_image_url || '',
     active: Number(row.active) === 1,
     created_at: row.created_at,
   };
@@ -266,7 +267,7 @@ function createApiRouter() {
     }
   });
 
-  router.post('/api/hunts', requireAdmin, async (req, res) => {
+  router.post('/api/hunts', requireAdmin, upload.single('welcome_image'), async (req, res) => {
     const name = sanitizeText(req.body.name, 120);
     const description = sanitizeText(req.body.description, 500);
     const active = parseBoolean(req.body.active !== undefined ? req.body.active : true);
@@ -284,18 +285,26 @@ function createApiRouter() {
 
     try {
       const client = getClient();
+      let welcomeImage = null;
+      if (req.file) {
+        if (!hasCloudinaryConfig()) {
+          return res.status(503).json({ error: 'Welcome image upload is not configured. Set Cloudinary variables in the environment.' });
+        }
+        welcomeImage = await uploadImageToCloudinary(req.file.buffer, req.file.originalname, 'festival-scavenger-hunt/welcome');
+      }
       const result = await client.execute({
-        sql: 'INSERT INTO hunts (name, description, default_points, passcode_hash, access_link, active) VALUES (?, ?, ?, ?, ?, ?)',
-        args: [name, description, defaultPoints, passcode ? hashHuntPasscode(passcode) : null, accessLink || null, active ? 1 : 0],
+        sql: 'INSERT INTO hunts (name, description, default_points, passcode_hash, access_link, welcome_image_url, welcome_image_public_id, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        args: [name, description, defaultPoints, passcode ? hashHuntPasscode(passcode) : null, accessLink || null, welcomeImage?.image_url || null, welcomeImage?.cloudinary_public_id || null, active ? 1 : 0],
       });
       return res.status(201).json({ success: true, id: Number(result.lastInsertRowid) });
     } catch (error) {
+      if (req.file) console.error('Welcome image upload failed:', error);
       console.error('Hunt creation failed:', error);
       return res.status(500).json({ error: 'Could not create scavenger hunt.' });
     }
   });
 
-  router.put('/api/hunts/:id', requireAdmin, async (req, res) => {
+  router.put('/api/hunts/:id', requireAdmin, upload.single('welcome_image'), async (req, res) => {
     const huntId = Number(req.params.id);
     const name = sanitizeText(req.body.name, 120);
     const description = sanitizeText(req.body.description, 500);
@@ -304,6 +313,7 @@ function createApiRouter() {
     const passcode = sanitizeText(req.body.passcode, 120);
     const accessLink = sanitizeAccessLink(req.body.access_link);
     const clearPasscode = req.body.clear_passcode === true || req.body.clear_passcode === 'true';
+    const clearWelcomeImage = parseBoolean(req.body.clear_welcome_image);
 
     if (!Number.isInteger(huntId) || huntId <= 0 || !name) {
       return res.status(400).json({ error: 'A valid hunt ID and name are required.' });
@@ -317,12 +327,40 @@ function createApiRouter() {
 
     try {
       const client = getClient();
+      const existing = await client.execute({
+        sql: 'SELECT welcome_image_public_id FROM hunts WHERE id = ?',
+        args: [huntId],
+      });
+      if (!existing.rows.length) return res.status(404).json({ error: 'Scavenger hunt not found.' });
+
+      let welcomeImage = null;
+      if (req.file) {
+        if (!hasCloudinaryConfig()) {
+          return res.status(503).json({ error: 'Welcome image upload is not configured. Set Cloudinary variables in the environment.' });
+        }
+        welcomeImage = await uploadImageToCloudinary(req.file.buffer, req.file.originalname, 'festival-scavenger-hunt/welcome');
+      }
+      const imageUpdate = welcomeImage
+        ? 'welcome_image_url = ?, welcome_image_public_id = ?'
+        : clearWelcomeImage ? 'welcome_image_url = NULL, welcome_image_public_id = NULL' : '';
       await client.execute({
         sql: `UPDATE hunts SET name = ?, description = ?, default_points = ?, access_link = ?, active = ?${passcode || clearPasscode ? ', passcode_hash = ?' : ''} WHERE id = ?`,
         args: passcode || clearPasscode
           ? [name, description, defaultPoints, accessLink || null, active ? 1 : 0, passcode ? hashHuntPasscode(passcode) : null, huntId]
           : [name, description, defaultPoints, accessLink || null, active ? 1 : 0, huntId],
       });
+      if (imageUpdate) {
+        const imageArgs = welcomeImage
+          ? [welcomeImage.image_url, welcomeImage.cloudinary_public_id, huntId]
+          : [huntId];
+        await client.execute({
+          sql: `UPDATE hunts SET ${imageUpdate} WHERE id = ?`,
+          args: imageArgs,
+        });
+        if (welcomeImage && existing.rows[0].welcome_image_public_id) {
+          await deleteCloudinaryImage(existing.rows[0].welcome_image_public_id);
+        }
+      }
       return res.json({ success: true });
     } catch (error) {
       console.error('Hunt update failed:', error);

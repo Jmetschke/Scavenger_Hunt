@@ -27,6 +27,15 @@
         <strong id="team-banner-name">No team saved</strong>
       </div>
 
+      <section class="event-welcome" aria-live="polite">
+        <img id="event-welcome-image" class="hidden" alt="" />
+        <div class="event-welcome-copy">
+          <p class="eyebrow">You are here</p>
+          <h2 id="event-welcome-name">Choose an event</h2>
+          <p id="event-welcome-description" class="helper-text"></p>
+        </div>
+      </section>
+
       <section class="team-card hunt-card">
         <label for="hunt-select" class="label">Choose scavenger hunt</label>
         <select id="hunt-select" aria-label="Choose scavenger hunt"></select>
@@ -52,6 +61,19 @@
           <p id="score-completed">0 challenges completed</p>
         </section>
       </main>
+    </div>
+
+    <div id="event-picker-modal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card event-picker-card" role="dialog" aria-modal="true" aria-labelledby="event-picker-title">
+        <p class="eyebrow">Festival Scavenger Hunt</p>
+        <h2 id="event-picker-title">What event are you looking for?</h2>
+        <form id="event-picker-form" class="stack-form">
+          <label class="label" for="event-picker-select">Choose your event</label>
+          <select id="event-picker-select" required></select>
+          <button type="submit" class="primary-button">Enter Event</button>
+        </form>
+      </div>
     </div>
 
     <div id="submission-modal" class="modal hidden" aria-hidden="true">
