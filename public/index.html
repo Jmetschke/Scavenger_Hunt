@@ -98,8 +98,13 @@
           </div>
 
           <div class="field-group">
-            <label class="label" for="image-input">Photo</label>
-            <input id="image-input" name="image" type="file" accept="image/*" capture="environment" required />
+            <span class="label">Photo</span>
+            <div class="photo-source-actions">
+              <label class="primary-button photo-source-button" for="camera-input">Take Photo</label>
+              <input id="camera-input" class="file-source-input" type="file" accept="image/*" capture="environment" />
+              <label class="secondary-button photo-source-button" for="image-input">Choose from Photos</label>
+              <input id="image-input" class="file-source-input" type="file" accept="image/*" />
+            </div>
             <div id="image-preview" class="image-preview hidden">
               <img id="preview-image" alt="Selected upload preview" />
             </div>

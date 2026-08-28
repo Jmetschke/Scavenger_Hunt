@@ -153,22 +153,21 @@ async function syncTeamChallengeScore(client, huntId, challengeId, teamKey) {
   if (!team.rows.length) return;
 
   const submissions = await client.execute({
-    sql: 'SELECT team_name, approved FROM submissions WHERE hunt_id = ? AND challenge_id = ?',
+    sql: 'SELECT team_name, approved, points_awarded FROM submissions WHERE hunt_id = ? AND challenge_id = ?',
     args: [huntId, challengeId],
   });
-  const approvedCount = submissions.rows.filter((row) => Number(row.approved) === 1 && getTeamKey(row.team_name) === teamKey).length;
+  const approvedSubmissions = submissions.rows.filter((row) => Number(row.approved) === 1 && getTeamKey(row.team_name) === teamKey);
   const eventTeamId = Number(team.rows[0].id);
-  if (approvedCount > 0) {
-    const challenge = await client.execute({
-      sql: 'SELECT points FROM challenges WHERE id = ? AND hunt_id = ?',
-      args: [challengeId, huntId],
+  if (approvedSubmissions.length > 0) {
+    const pointsAwarded = Math.max(...approvedSubmissions.map((row) => Number(row.points_awarded || 0)));
+    await client.execute({
+      sql: `
+        INSERT INTO team_challenge_scores (event_team_id, challenge_id, points_awarded)
+        VALUES (?, ?, ?)
+        ON CONFLICT(event_team_id, challenge_id) DO UPDATE SET points_awarded = excluded.points_awarded
+      `,
+      args: [eventTeamId, challengeId, pointsAwarded],
     });
-    if (challenge.rows.length) {
-      await client.execute({
-        sql: 'INSERT OR IGNORE INTO team_challenge_scores (event_team_id, challenge_id, points_awarded) VALUES (?, ?, ?)',
-        args: [eventTeamId, challengeId, Number(challenge.rows[0].points || 0)],
-      });
-    }
   } else {
     await client.execute({
       sql: 'DELETE FROM team_challenge_scores WHERE event_team_id = ? AND challenge_id = ?',
@@ -592,7 +591,7 @@ function createApiRouter() {
 
       const client = getClient();
       const challengeExists = await client.execute({
-        sql: 'SELECT id, hunt_id FROM challenges WHERE id = ?',
+        sql: 'SELECT id, hunt_id, points FROM challenges WHERE id = ?',
         args: [challengeId],
       });
 
@@ -609,6 +608,7 @@ function createApiRouter() {
       const teamName = sanitizeText(req.body.team_name || req.body.teamName, 80) || 'Anonymous Team';
       const caption = sanitizeText(req.body.caption, 240);
       const comment = sanitizeText(req.body.comment, 500);
+      const challengePoints = Number(challengeExists.rows[0].points || 0);
 
       let uploadInfo = null;
       if (!hasCloudinaryConfig()) {
@@ -634,11 +634,12 @@ function createApiRouter() {
         const result = await client.execute({
           sql: `
             INSERT INTO submissions (challenge_id, hunt_id, team_name, image_url, cloudinary_public_id, caption, comment, submitted_at, approved, points_awarded)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
           `,
-          args: [challengeId, huntId, teamName, uploadInfo.image_url, uploadInfo.cloudinary_public_id, caption, comment, submittedAt],
+          args: [challengeId, huntId, teamName, uploadInfo.image_url, uploadInfo.cloudinary_public_id, caption, comment, submittedAt, challengePoints],
         });
         await ensureEventTeam(client, huntId, teamName);
+        await syncTeamChallengeScore(client, huntId, challengeId, getTeamKey(teamName));
 
         return res.status(201).json({
           success: true,
@@ -651,6 +652,8 @@ function createApiRouter() {
             caption,
             comment,
             submitted_at: submittedAt,
+            approved: true,
+            points_awarded: challengePoints,
           },
         });
       } catch (dbError) {
@@ -1081,16 +1084,26 @@ function createApiRouter() {
     try {
       const client = getClient();
       const submission = await client.execute({
-        sql: 'SELECT hunt_id, challenge_id, team_name FROM submissions WHERE id = ?',
+        sql: `
+          SELECT s.hunt_id, s.challenge_id, s.team_name, s.points_awarded, c.points AS challenge_points
+          FROM submissions s
+          JOIN challenges c ON c.id = s.challenge_id
+          WHERE s.id = ?
+        `,
         args: [submissionId],
       });
       if (!submission.rows.length) {
         return res.status(404).json({ error: 'Submission not found.' });
       }
 
+      const resolvedPoints = hasPoints
+        ? pointsAwarded
+        : (approved && Number(submission.rows[0].points_awarded || 0) === 0
+          ? Number(submission.rows[0].challenge_points || 0)
+          : null);
       await client.execute({
         sql: `UPDATE submissions SET approved = ?, points_awarded = COALESCE(?, points_awarded) WHERE id = ?`,
-        args: [approved ? 1 : 0, pointsAwarded, submissionId],
+        args: [approved ? 1 : 0, resolvedPoints, submissionId],
       });
       await syncTeamChallengeScore(
         client,

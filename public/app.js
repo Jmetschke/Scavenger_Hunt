@@ -14,6 +14,7 @@ const submissionForm = document.getElementById('submission-form');
 const challengeIdInput = document.getElementById('challenge-id');
 const challengeNameEl = document.getElementById('submission-challenge-name');
 const teamNameForm = document.getElementById('team-name-form');
+const cameraInput = document.getElementById('camera-input');
 const imageInput = document.getElementById('image-input');
 const imagePreview = document.getElementById('image-preview');
 const previewImage = document.getElementById('preview-image');
@@ -37,6 +38,7 @@ let availableHunts = [];
 let scoreRefreshTimer = null;
 let shouldPromptForHunt = false;
 let huntRequestInProgress = false;
+let selectedImageFile = null;
 
 function getStoredPasscodes() {
   try {
@@ -309,6 +311,8 @@ async function openSubmitModal(challengeId) {
     challengeNameEl.textContent = challenge.title;
     teamNameForm.value = getStoredTeamName();
     hideStatus(uploadStatus);
+    selectedImageFile = null;
+    cameraInput.value = '';
     imageInput.value = '';
     imagePreview.classList.add('hidden');
     previewImage.src = '';
@@ -361,21 +365,28 @@ async function openEntriesModal(challengeId) {
   }
 }
 
-imageInput.addEventListener('change', () => {
-  const file = imageInput.files && imageInput.files[0];
+function selectSubmissionImage(input, otherInput) {
+  const file = input.files && input.files[0];
   if (!file) {
+    selectedImageFile = null;
     imagePreview.classList.add('hidden');
     previewImage.src = '';
     return;
   }
 
+  selectedImageFile = file;
+  otherInput.value = '';
+  hideStatus(uploadStatus);
   const reader = new FileReader();
   reader.onload = (event) => {
     previewImage.src = event.target.result;
     imagePreview.classList.remove('hidden');
   };
   reader.readAsDataURL(file);
-});
+}
+
+cameraInput.addEventListener('change', () => selectSubmissionImage(cameraInput, imageInput));
+imageInput.addEventListener('change', () => selectSubmissionImage(imageInput, cameraInput));
 
 saveTeamButton.addEventListener('click', () => {
   const newName = teamNameInput.value.trim();
@@ -428,7 +439,7 @@ changeTeamButton.addEventListener('click', () => {
 submissionForm.addEventListener('submit', async (event) => {
   event.preventDefault();
 
-  const file = imageInput.files && imageInput.files[0];
+  const file = selectedImageFile;
   const teamName = teamNameForm.value.trim();
   const caption = document.getElementById('caption-input').value.trim();
   const comment = document.getElementById('comment-input').value.trim();
@@ -475,12 +486,13 @@ submissionForm.addEventListener('submit', async (event) => {
       throw new Error(result.error || 'Upload failed. Try again.');
     }
 
-    showStatus(uploadStatus, 'Upload successful! Your entry is live.', 'success');
+    const awardedPoints = Number(result.submission?.points_awarded || 0);
+    showStatus(uploadStatus, `Upload successful! ${awardedPoints} point${awardedPoints === 1 ? '' : 's'} added.`, 'success');
     submissionForm.reset();
+    selectedImageFile = null;
     imagePreview.classList.add('hidden');
     previewImage.src = '';
     teamNameForm.value = getStoredTeamName();
-    hideStatus(uploadStatus);
     setTimeout(() => {
       closeModal(submissionModal);
       loadChallenges();
