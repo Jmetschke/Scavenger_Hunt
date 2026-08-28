@@ -3,20 +3,40 @@ const crypto = require('crypto');
 const multer = require('multer');
 const { getClient, getDatabaseStatus } = require('../db');
 const { hasCloudinaryConfig, uploadImageToCloudinary, deleteCloudinaryImage } = require('../cloudinary');
+const { optimizeImage } = require('../image-processing');
+const { createChallengeTemplate, parseChallengeTemplate } = require('../challenge-template');
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024,
+    fileSize: 25 * 1024 * 1024,
   },
   fileFilter: (req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
     if (!allowed.includes(file.mimetype)) {
-      return cb(new Error('Only JPG, PNG, WebP, HEIC, or HEIF images are allowed.'));
+      return cb(new Error('Only JPG, PNG, or WebP images are supported. HEIC and HEIF photos are not supported on this server.'));
     }
     cb(null, true);
   },
 });
+
+const templateUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 1 * 1024 * 1024 },
+});
+
+function handleUpload(fieldName) {
+  const middleware = upload.single(fieldName);
+  return (req, res, next) => middleware(req, res, (error) => {
+    if (error) {
+      const message = error.code === 'LIMIT_FILE_SIZE'
+        ? 'Image is too large. Please choose a photo under 25MB.'
+        : error.message || 'The selected image could not be uploaded.';
+      return res.status(400).json({ error: message });
+    }
+    return next();
+  });
+}
 
 function sanitizeText(value, maxLength = 200) {
   if (value === null || value === undefined) {
@@ -267,7 +287,7 @@ function createApiRouter() {
     }
   });
 
-  router.post('/api/hunts', requireAdmin, upload.single('welcome_image'), async (req, res) => {
+  router.post('/api/hunts', requireAdmin, handleUpload('welcome_image'), async (req, res) => {
     const name = sanitizeText(req.body.name, 120);
     const description = sanitizeText(req.body.description, 500);
     const active = parseBoolean(req.body.active !== undefined ? req.body.active : true);
@@ -283,14 +303,20 @@ function createApiRouter() {
       return res.status(400).json({ error: 'Access link must be a valid HTTP or HTTPS URL.' });
     }
 
+    let welcomeImage = null;
     try {
       const client = getClient();
-      let welcomeImage = null;
       if (req.file) {
         if (!hasCloudinaryConfig()) {
           return res.status(503).json({ error: 'Welcome image upload is not configured. Set Cloudinary variables in the environment.' });
         }
-        welcomeImage = await uploadImageToCloudinary(req.file.buffer, req.file.originalname, 'festival-scavenger-hunt/welcome');
+        let optimizedImage;
+        try {
+          optimizedImage = await optimizeImage(req.file.buffer);
+        } catch (processingError) {
+          return res.status(400).json({ error: processingError.message || 'The welcome image could not be processed.' });
+        }
+        welcomeImage = await uploadImageToCloudinary(optimizedImage, req.file.originalname, 'festival-scavenger-hunt/welcome');
       }
       const result = await client.execute({
         sql: 'INSERT INTO hunts (name, description, default_points, passcode_hash, access_link, welcome_image_url, welcome_image_public_id, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -298,13 +324,66 @@ function createApiRouter() {
       });
       return res.status(201).json({ success: true, id: Number(result.lastInsertRowid) });
     } catch (error) {
+      if (welcomeImage?.cloudinary_public_id) {
+        try {
+          await deleteCloudinaryImage(welcomeImage.cloudinary_public_id);
+        } catch (cleanupError) {
+          console.error('Failed cleaning up welcome image after hunt creation failure:', cleanupError.message || cleanupError);
+        }
+      }
       if (req.file) console.error('Welcome image upload failed:', error);
       console.error('Hunt creation failed:', error);
       return res.status(500).json({ error: 'Could not create scavenger hunt.' });
     }
   });
 
-  router.put('/api/hunts/:id', requireAdmin, upload.single('welcome_image'), async (req, res) => {
+  router.post('/api/hunts/:id/clone', requireAdmin, async (req, res) => {
+    const sourceHuntId = Number(req.params.id);
+    if (!Number.isInteger(sourceHuntId) || sourceHuntId <= 0) {
+      return res.status(400).json({ error: 'Invalid hunt ID.' });
+    }
+
+    try {
+      const client = getClient();
+      const source = await client.execute({
+        sql: 'SELECT name, description, default_points FROM hunts WHERE id = ?',
+        args: [sourceHuntId],
+      });
+      if (!source.rows.length) return res.status(404).json({ error: 'Scavenger hunt not found.' });
+
+      const sourceRow = source.rows[0];
+      const cloneName = sanitizeText(req.body.name, 120) || `${sourceRow.name} Copy`;
+      const challenges = await client.execute({
+        sql: 'SELECT title, description, points, sort_order, active FROM challenges WHERE hunt_id = ? ORDER BY sort_order ASC, id ASC',
+        args: [sourceHuntId],
+      });
+
+      await client.execute('BEGIN');
+      try {
+        const clone = await client.execute({
+          sql: 'INSERT INTO hunts (name, description, default_points, active) VALUES (?, ?, ?, 0)',
+          args: [cloneName, sourceRow.description || '', Number(sourceRow.default_points || 5)],
+        });
+        const cloneId = Number(clone.lastInsertRowid);
+        for (const challenge of challenges.rows) {
+          await client.execute({
+            sql: 'INSERT INTO challenges (title, description, points, sort_order, active, hunt_id) VALUES (?, ?, ?, ?, ?, ?)',
+            args: [challenge.title, challenge.description || '', Number(challenge.points || 0), Number(challenge.sort_order || 0), Number(challenge.active) === 1 ? 1 : 0, cloneId],
+          });
+        }
+        await client.execute('COMMIT');
+        return res.status(201).json({ success: true, id: cloneId, imported: challenges.rows.length, message: 'Hunt cloned successfully.' });
+      } catch (error) {
+        await client.execute('ROLLBACK');
+        throw error;
+      }
+    } catch (error) {
+      console.error('Hunt clone failed:', error);
+      return res.status(500).json({ error: 'Could not clone scavenger hunt.' });
+    }
+  });
+
+  router.put('/api/hunts/:id', requireAdmin, handleUpload('welcome_image'), async (req, res) => {
     const huntId = Number(req.params.id);
     const name = sanitizeText(req.body.name, 120);
     const description = sanitizeText(req.body.description, 500);
@@ -325,6 +404,8 @@ function createApiRouter() {
       return res.status(400).json({ error: 'Access link must be a valid HTTP or HTTPS URL.' });
     }
 
+    let welcomeImage = null;
+    let welcomeImageSaved = false;
     try {
       const client = getClient();
       const existing = await client.execute({
@@ -333,12 +414,17 @@ function createApiRouter() {
       });
       if (!existing.rows.length) return res.status(404).json({ error: 'Scavenger hunt not found.' });
 
-      let welcomeImage = null;
       if (req.file) {
         if (!hasCloudinaryConfig()) {
           return res.status(503).json({ error: 'Welcome image upload is not configured. Set Cloudinary variables in the environment.' });
         }
-        welcomeImage = await uploadImageToCloudinary(req.file.buffer, req.file.originalname, 'festival-scavenger-hunt/welcome');
+        let optimizedImage;
+        try {
+          optimizedImage = await optimizeImage(req.file.buffer);
+        } catch (processingError) {
+          return res.status(400).json({ error: processingError.message || 'The welcome image could not be processed.' });
+        }
+        welcomeImage = await uploadImageToCloudinary(optimizedImage, req.file.originalname, 'festival-scavenger-hunt/welcome');
       }
       const imageUpdate = welcomeImage
         ? 'welcome_image_url = ?, welcome_image_public_id = ?'
@@ -357,12 +443,24 @@ function createApiRouter() {
           sql: `UPDATE hunts SET ${imageUpdate} WHERE id = ?`,
           args: imageArgs,
         });
+        welcomeImageSaved = true;
         if (welcomeImage && existing.rows[0].welcome_image_public_id) {
-          await deleteCloudinaryImage(existing.rows[0].welcome_image_public_id);
+          try {
+            await deleteCloudinaryImage(existing.rows[0].welcome_image_public_id);
+          } catch (cleanupError) {
+            console.error('Failed deleting previous welcome image:', cleanupError.message || cleanupError);
+          }
         }
       }
       return res.json({ success: true });
     } catch (error) {
+      if (!welcomeImageSaved && welcomeImage?.cloudinary_public_id) {
+        try {
+          await deleteCloudinaryImage(welcomeImage.cloudinary_public_id);
+        } catch (cleanupError) {
+          console.error('Failed cleaning up welcome image after hunt update failure:', cleanupError.message || cleanupError);
+        }
+      }
       console.error('Hunt update failed:', error);
       return res.status(500).json({ error: 'Could not update scavenger hunt.' });
     }
@@ -484,7 +582,7 @@ function createApiRouter() {
     }
   });
 
-  router.post('/api/submissions', upload.single('image'), async (req, res) => {
+  router.post('/api/submissions', handleUpload('image'), async (req, res) => {
     const status = getDatabaseStatus();
     if (!status.ready) {
       return res.status(503).json({ error: 'Database is unavailable. Please try again later.' });
@@ -497,10 +595,6 @@ function createApiRouter() {
 
       if (!req.file.mimetype || !req.file.mimetype.startsWith('image/')) {
         return res.status(400).json({ error: 'Invalid image type.' });
-      }
-
-      if (req.file.size > 10 * 1024 * 1024) {
-        return res.status(400).json({ error: 'Image is too large. Please upload an image under 10MB.' });
       }
 
       const challengeId = Number(req.body.challenge_id || req.body.challengeId);
@@ -534,10 +628,16 @@ function createApiRouter() {
       }
 
       try {
-        uploadInfo = await uploadImageToCloudinary(req.file.buffer, req.file.originalname, 'festival-scavenger-hunt');
+        let optimizedImage;
+        try {
+          optimizedImage = await optimizeImage(req.file.buffer);
+        } catch (processingError) {
+          return res.status(400).json({ error: processingError.message || 'The selected image could not be processed.' });
+        }
+        uploadInfo = await uploadImageToCloudinary(optimizedImage, req.file.originalname, 'festival-scavenger-hunt');
       } catch (uploadError) {
         console.error('Cloudinary upload failed:', uploadError);
-        return res.status(500).json({ error: 'Image upload failed. Please try again.', details: uploadError.message });
+        return res.status(500).json({ error: 'Image upload failed. Please try again.' });
       }
 
       const submittedAt = new Date().toISOString();
@@ -665,6 +765,80 @@ function createApiRouter() {
     } catch (error) {
       console.error('Admin challenge fetch failed:', error);
       return res.status(500).json({ error: 'Unable to load challenges.' });
+    }
+  });
+
+  router.get('/api/admin/hunts/:huntId/challenges/template', requireAdmin, async (req, res) => {
+    const huntId = Number(req.params.huntId);
+    if (!Number.isInteger(huntId) || huntId <= 0) return res.status(400).json({ error: 'Invalid hunt ID.' });
+
+    try {
+      const client = getClient();
+      const result = await client.execute({
+        sql: 'SELECT title, description, points, sort_order, active FROM challenges WHERE hunt_id = ? ORDER BY sort_order ASC, id ASC',
+        args: [huntId],
+      });
+      const csv = createChallengeTemplate(result.rows);
+      res.set({
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="hunt-${huntId}-challenges-template.csv"`,
+      });
+      return res.send(csv);
+    } catch (error) {
+      console.error('Challenge template download failed:', error);
+      return res.status(500).json({ error: 'Unable to download the challenge template.' });
+    }
+  });
+
+  router.post('/api/admin/hunts/:huntId/challenges/import', requireAdmin, (req, res, next) => {
+    templateUpload.single('template')(req, res, (error) => {
+      if (error) {
+        const message = error.code === 'LIMIT_FILE_SIZE'
+          ? 'The challenge template must be under 1MB.'
+          : error.message || 'The challenge template could not be uploaded.';
+        return res.status(400).json({ error: message });
+      }
+      return next();
+    });
+  }, async (req, res) => {
+    const huntId = Number(req.params.huntId);
+    if (!Number.isInteger(huntId) || huntId <= 0) return res.status(400).json({ error: 'Invalid hunt ID.' });
+    if (!req.file) return res.status(400).json({ error: 'Please choose a CSV challenge template.' });
+
+    try {
+      const rows = parseChallengeTemplate(req.file.buffer.toString('utf8'));
+      if (!rows.length) return res.status(400).json({ error: 'The challenge template does not contain any challenge rows.' });
+      const client = getClient();
+      const hunt = await client.execute({ sql: 'SELECT id FROM hunts WHERE id = ?', args: [huntId] });
+      if (!hunt.rows.length) return res.status(404).json({ error: 'Scavenger hunt not found.' });
+
+      await client.execute('BEGIN');
+      try {
+        for (const row of rows) {
+          const nextSortOrder = row.sort_order || Number((await client.execute({
+            sql: 'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_sort_order FROM challenges WHERE hunt_id = ?',
+            args: [huntId],
+          })).rows[0].next_sort_order);
+          if (row.sort_order !== null) {
+            await client.execute({
+              sql: 'UPDATE challenges SET sort_order = sort_order + 1 WHERE hunt_id = ? AND sort_order >= ?',
+              args: [huntId, nextSortOrder],
+            });
+          }
+          await client.execute({
+            sql: 'INSERT INTO challenges (title, description, points, sort_order, active, hunt_id) VALUES (?, ?, ?, ?, ?, ?)',
+            args: [row.title, row.description, row.points, nextSortOrder, row.active ? 1 : 0, huntId],
+          });
+        }
+        await client.execute('COMMIT');
+      } catch (error) {
+        await client.execute('ROLLBACK');
+        throw error;
+      }
+      return res.status(201).json({ success: true, imported: rows.length, message: `${rows.length} challenges imported.` });
+    } catch (error) {
+      console.error('Challenge template import failed:', error);
+      return res.status(400).json({ error: error.message || 'Unable to import the challenge template.' });
     }
   });
 

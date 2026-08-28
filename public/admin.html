@@ -61,6 +61,16 @@
                 <button id="reset-hunt-form" type="button" class="secondary-button">Clear</button>
               </div>
             </form>
+            <div class="template-tools">
+              <h3>Challenge Template</h3>
+              <p class="helper-text">Required columns: <strong>Name</strong>, <strong>Description</strong>, and <strong>Points</strong>. Sort Order and Active are optional.</p>
+              <a id="download-challenge-template" class="secondary-button small" href="#">Download Excel Template (.csv)</a>
+              <form id="challenge-template-form" class="template-upload-form">
+                <label class="label" for="challenge-template-input">Upload challenges template</label>
+                <input id="challenge-template-input" type="file" accept=".csv,text/csv" required />
+                <button id="upload-challenge-template" type="submit" class="primary-button small">Upload Template</button>
+              </form>
+            </div>
             <div id="admin-hunts-list" class="admin-list" aria-live="polite"></div>
           </section>
 

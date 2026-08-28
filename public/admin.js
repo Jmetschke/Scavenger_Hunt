@@ -33,6 +33,10 @@ const currentHuntName = document.getElementById('current-hunt-name');
 const currentHuntDescription = document.getElementById('current-hunt-description');
 const currentHuntStatus = document.getElementById('current-hunt-status');
 const sectionHuntNames = document.querySelectorAll('.section-hunt-name');
+const downloadChallengeTemplate = document.getElementById('download-challenge-template');
+const challengeTemplateForm = document.getElementById('challenge-template-form');
+const challengeTemplateInput = document.getElementById('challenge-template-input');
+const uploadChallengeTemplateButton = document.getElementById('upload-challenge-template');
 let hunts = [];
 let selectedHuntId = null;
 let editingHuntId = null;
@@ -161,6 +165,7 @@ async function loadAdminDashboard() {
         <div class="modal-actions">
           <button class="${hunt.id === selectedHuntId ? 'primary-button' : 'secondary-button'} small" type="button" data-select-hunt="${hunt.id}">${hunt.id === selectedHuntId ? 'Editing' : 'Manage'}</button>
           <button class="secondary-button small" type="button" data-edit-hunt="${hunt.id}">Edit</button>
+          <button class="secondary-button small" type="button" data-clone-hunt="${hunt.id}">Clone</button>
           <button class="secondary-button small" type="button" data-delete-hunt="${hunt.id}">Delete</button>
         </div>
       </div>
@@ -181,6 +186,10 @@ async function loadAdminDashboard() {
       try { await deleteHunt(Number(button.dataset.deleteHunt)); } finally { setButtonBusy(button, false); }
     }));
     huntsList.querySelectorAll('[data-edit-hunt]').forEach((button) => button.addEventListener('click', () => startHuntEdit(Number(button.dataset.editHunt))));
+    huntsList.querySelectorAll('[data-clone-hunt]').forEach((button) => button.addEventListener('click', async () => {
+      setButtonBusy(button, true, 'Cloning...');
+      try { await cloneHunt(Number(button.dataset.cloneHunt)); } finally { setButtonBusy(button, false); }
+    }));
 
     const [challenges, submissions, teamScores] = await Promise.all([
       fetchJson(`/api/admin/challenges?hunt_id=${selectedHuntId}`),
@@ -359,6 +368,25 @@ async function deleteHunt(huntId) {
   }
 }
 
+async function cloneHunt(huntId) {
+  const hunt = hunts.find((item) => item.id === huntId);
+  if (!hunt) return;
+  const name = window.prompt('Name for the cloned hunt:', `${hunt.name} Copy`);
+  if (!name || !name.trim()) return;
+
+  try {
+    const result = await fetchJson(`/api/hunts/${huntId}/clone`, {
+      method: 'POST',
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    selectedHuntId = result.id;
+    await loadAdminDashboard();
+    setChallengeDefaults();
+  } catch (error) {
+    setStatus(adminLoginStatus, error.message, 'error');
+  }
+}
+
 async function updateSubmissionApproval(submissionId, approved) {
   try {
     await fetchJson(`/api/submissions/${submissionId}`, {
@@ -462,6 +490,35 @@ huntForm.addEventListener('submit', async (event) => {
 });
 
 resetHuntButton.addEventListener('click', resetHuntForm);
+
+downloadChallengeTemplate.addEventListener('click', (event) => {
+  if (!selectedHuntId) {
+    event.preventDefault();
+    setStatus(adminLoginStatus, 'Select a hunt before downloading its challenge template.', 'error');
+    return;
+  }
+  downloadChallengeTemplate.href = `/api/admin/hunts/${selectedHuntId}/challenges/template`;
+});
+
+challengeTemplateForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!selectedHuntId) return;
+  const file = challengeTemplateInput.files && challengeTemplateInput.files[0];
+  if (!file) return;
+  setButtonBusy(uploadChallengeTemplateButton, true, 'Uploading...');
+  const formData = new FormData();
+  formData.append('template', file);
+  try {
+    const result = await fetchForm(`/api/admin/hunts/${selectedHuntId}/challenges/import`, formData, 'POST');
+    challengeTemplateForm.reset();
+    await loadAdminDashboard();
+    setStatus(adminLoginStatus, result.message, 'success');
+  } catch (error) {
+    setStatus(adminLoginStatus, error.message, 'error');
+  } finally {
+    setButtonBusy(uploadChallengeTemplateButton, false);
+  }
+});
 
 huntWelcomeImageInput.addEventListener('change', () => {
   const file = huntWelcomeImageInput.files && huntWelcomeImageInput.files[0];

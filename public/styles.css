@@ -468,6 +468,26 @@ input:focus, textarea:focus {
   gap: 0.4rem;
 }
 
+.template-tools {
+  display: grid;
+  gap: 0.6rem;
+  margin: 1rem 0;
+  padding: 0.9rem;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.template-tools h3,
+.template-tools p {
+  margin-bottom: 0;
+}
+
+.template-upload-form {
+  display: grid;
+  gap: 0.6rem;
+}
+
 .challenge-inline {
   padding: 0.8rem 0.9rem;
   border-radius: 12px;
