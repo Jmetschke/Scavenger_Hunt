@@ -1,6 +1,3 @@
-const adminLoginPanel = document.getElementById('admin-login-panel');
-const adminDashboard = document.getElementById('admin-dashboard');
-const adminLoginForm = document.getElementById('admin-login-form');
 const adminLoginStatus = document.getElementById('admin-login-status');
 const challengeForm = document.getElementById('challenge-form');
 const challengesList = document.getElementById('admin-challenges-list');
@@ -536,42 +533,7 @@ document.getElementById('reset-challenge-form').addEventListener('click', () => 
   challengeTitleInput.focus();
 });
 
-adminLoginForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const password = document.getElementById('admin-password').value;
-  const submitButton = adminLoginForm.querySelector('button[type="submit"]');
-  setButtonBusy(submitButton, true, 'Signing in...');
-
-  try {
-    await fetchJson('/api/admin/login', {
-      method: 'POST',
-      body: JSON.stringify({ password }),
-    });
-
-    adminLoginPanel.classList.add('hidden');
-    adminDashboard.classList.remove('hidden');
-    hideStatus(adminLoginStatus);
-    loadAdminDashboard();
-  } catch (error) {
-    setStatus(adminLoginStatus, error.message, 'error');
-  } finally {
-    setButtonBusy(submitButton, false);
-  }
-});
-
-window.addEventListener('DOMContentLoaded', async () => {
-  adminLoginPanel.classList.remove('hidden');
-  adminDashboard.classList.add('hidden');
+window.addEventListener('DOMContentLoaded', () => {
   challengeActiveInput.checked = true;
-
-  try {
-    const response = await fetch('/api/admin/challenges', { credentials: 'same-origin' });
-    if (response.ok) {
-      adminLoginPanel.classList.add('hidden');
-      adminDashboard.classList.remove('hidden');
-      loadAdminDashboard().then(setChallengeDefaults);
-    }
-  } catch (error) {
-    // ignore; login required
-  }
+  loadAdminDashboard().then(setChallengeDefaults);
 });

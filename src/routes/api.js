@@ -66,11 +66,6 @@ function parseBoolean(value) {
   return false;
 }
 
-function getAdminToken() {
-  const password = process.env.ADMIN_PASSWORD || '';
-  return crypto.createHash('sha256').update(password).digest('hex');
-}
-
 function hashHuntPasscode(value) {
   return crypto.createHash('sha256').update(String(value || '')).digest('hex');
 }
@@ -98,13 +93,6 @@ async function requireHuntAccess(req, res, huntId) {
 }
 
 function requireAdmin(req, res, next) {
-  const token = req.cookies && req.cookies.admin_token;
-  const expected = getAdminToken();
-
-  if (!expected || !token || token !== expected) {
-    return res.status(401).json({ error: 'Admin access required.' });
-  }
-
   return next();
 }
 
@@ -713,28 +701,6 @@ function createApiRouter() {
       console.error('Leaderboard failed:', error);
       return res.status(500).json({ error: 'Failed to load leaderboard.', message: error.message });
     }
-  });
-
-  router.post('/api/admin/login', (req, res) => {
-    const password = String(req.body.password || '');
-    const expected = getAdminToken();
-
-    if (!process.env.ADMIN_PASSWORD) {
-      return res.status(503).json({ error: 'Admin password has not been configured.' });
-    }
-
-    if (!password || password !== process.env.ADMIN_PASSWORD) {
-      return res.status(401).json({ error: 'Incorrect admin password.' });
-    }
-
-    res.cookie('admin_token', expected, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 1000 * 60 * 60 * 8,
-    });
-
-    return res.json({ success: true, message: 'Admin signed in.' });
   });
 
   router.get('/api/admin/challenges', requireAdmin, async (req, res) => {

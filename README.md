@@ -45,8 +45,6 @@ TURSO_AUTH_TOKEN=
 CLOUDINARY_CLOUD_NAME=
 CLOUDINARY_API_KEY=
 CLOUDINARY_API_SECRET=
-
-ADMIN_PASSWORD=
 ```
 
 ## Running locally
@@ -83,7 +81,7 @@ When `TURSO_DATABASE_URL` is configured, the app requires a valid `TURSO_AUTH_TO
 
 ## Admin access
 
-Visit `/admin` and enter the password from `ADMIN_PASSWORD`.
+Visit `/admin` to open the admin portal. No user code or password is required.
 
 ## Render deployment notes
 
