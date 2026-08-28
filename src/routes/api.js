@@ -345,24 +345,26 @@ function createApiRouter() {
         args: [sourceHuntId],
       });
 
-      await client.execute('BEGIN');
+      const transaction = await client.transaction('write');
       try {
-        const clone = await client.execute({
+        const clone = await transaction.execute({
           sql: 'INSERT INTO hunts (name, description, default_points, active) VALUES (?, ?, ?, 0)',
           args: [cloneName, sourceRow.description || '', Number(sourceRow.default_points || 5)],
         });
         const cloneId = Number(clone.lastInsertRowid);
         for (const challenge of challenges.rows) {
-          await client.execute({
+          await transaction.execute({
             sql: 'INSERT INTO challenges (title, description, points, sort_order, active, hunt_id) VALUES (?, ?, ?, ?, ?, ?)',
             args: [challenge.title, challenge.description || '', Number(challenge.points || 0), Number(challenge.sort_order || 0), Number(challenge.active) === 1 ? 1 : 0, cloneId],
           });
         }
-        await client.execute('COMMIT');
+        await transaction.commit();
         return res.status(201).json({ success: true, id: cloneId, imported: challenges.rows.length, message: 'Hunt cloned successfully.' });
       } catch (error) {
-        await client.execute('ROLLBACK');
+        if (!transaction.closed) await transaction.rollback();
         throw error;
+      } finally {
+        transaction.close();
       }
     } catch (error) {
       console.error('Hunt clone failed:', error);
@@ -781,28 +783,30 @@ function createApiRouter() {
       const hunt = await client.execute({ sql: 'SELECT id FROM hunts WHERE id = ?', args: [huntId] });
       if (!hunt.rows.length) return res.status(404).json({ error: 'Scavenger hunt not found.' });
 
-      await client.execute('BEGIN');
+      const transaction = await client.transaction('write');
       try {
         for (const row of rows) {
-          const nextSortOrder = row.sort_order || Number((await client.execute({
+          const nextSortOrder = row.sort_order || Number((await transaction.execute({
             sql: 'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_sort_order FROM challenges WHERE hunt_id = ?',
             args: [huntId],
           })).rows[0].next_sort_order);
           if (row.sort_order !== null) {
-            await client.execute({
+            await transaction.execute({
               sql: 'UPDATE challenges SET sort_order = sort_order + 1 WHERE hunt_id = ? AND sort_order >= ?',
               args: [huntId, nextSortOrder],
             });
           }
-          await client.execute({
+          await transaction.execute({
             sql: 'INSERT INTO challenges (title, description, points, sort_order, active, hunt_id) VALUES (?, ?, ?, ?, ?, ?)',
             args: [row.title, row.description, row.points, nextSortOrder, row.active ? 1 : 0, huntId],
           });
         }
-        await client.execute('COMMIT');
+        await transaction.commit();
       } catch (error) {
-        await client.execute('ROLLBACK');
+        if (!transaction.closed) await transaction.rollback();
         throw error;
+      } finally {
+        transaction.close();
       }
       return res.status(201).json({ success: true, imported: rows.length, message: `${rows.length} challenges imported.` });
     } catch (error) {
