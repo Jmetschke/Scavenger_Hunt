@@ -112,6 +112,33 @@ function hideStatus(element) {
   element.textContent = '';
 }
 
+function getInvitationLink(huntId) {
+  return `${window.location.origin}/event/${huntId}`;
+}
+
+async function copyInvitationLink(huntId) {
+  const invitationLink = getInvitationLink(huntId);
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(invitationLink);
+    } else {
+      const temporaryInput = document.createElement('textarea');
+      temporaryInput.value = invitationLink;
+      temporaryInput.setAttribute('readonly', '');
+      temporaryInput.style.position = 'fixed';
+      temporaryInput.style.opacity = '0';
+      document.body.appendChild(temporaryInput);
+      temporaryInput.select();
+      const copied = document.execCommand('copy');
+      temporaryInput.remove();
+      if (!copied) throw new Error('Copy was not available.');
+    }
+    setStatus(adminLoginStatus, `Invitation link copied: ${invitationLink}`, 'success');
+  } catch (error) {
+    window.prompt('Copy this invitation link:', invitationLink);
+  }
+}
+
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, {
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
@@ -158,9 +185,11 @@ async function loadAdminDashboard() {
         <div class="admin-item-header"><strong>${hunt.name}</strong><span>${hunt.active ? 'Available' : 'Hidden'}</span></div>
         <p>${hunt.description || 'No description provided.'}</p>
         <p><strong>New challenges start at ${hunt.default_points} points.</strong></p>
+        <p class="helper-text">Invitation link: <a href="${getInvitationLink(hunt.id)}" target="_blank" rel="noopener">${getInvitationLink(hunt.id)}</a></p>
         ${hunt.access_link ? `<p><a href="${hunt.access_link}" target="_blank" rel="noopener">Open event information link</a></p>` : ''}
         <div class="modal-actions">
           <button class="${hunt.id === selectedHuntId ? 'primary-button' : 'secondary-button'} small" type="button" data-select-hunt="${hunt.id}">${hunt.id === selectedHuntId ? 'Editing' : 'Manage'}</button>
+          <button class="secondary-button small" type="button" data-copy-invitation="${hunt.id}">Copy Invitation Link</button>
           <button class="secondary-button small" type="button" data-edit-hunt="${hunt.id}">Edit</button>
           <button class="secondary-button small" type="button" data-clone-hunt="${hunt.id}">Clone</button>
           <button class="secondary-button small" type="button" data-delete-hunt="${hunt.id}">Delete</button>
@@ -183,6 +212,10 @@ async function loadAdminDashboard() {
       try { await deleteHunt(Number(button.dataset.deleteHunt)); } finally { setButtonBusy(button, false); }
     }));
     huntsList.querySelectorAll('[data-edit-hunt]').forEach((button) => button.addEventListener('click', () => startHuntEdit(Number(button.dataset.editHunt))));
+    huntsList.querySelectorAll('[data-copy-invitation]').forEach((button) => button.addEventListener('click', async () => {
+      setButtonBusy(button, true, 'Copying...');
+      try { await copyInvitationLink(Number(button.dataset.copyInvitation)); } finally { setButtonBusy(button, false); }
+    }));
     huntsList.querySelectorAll('[data-clone-hunt]').forEach((button) => button.addEventListener('click', async () => {
       setButtonBusy(button, true, 'Cloning...');
       try { await cloneHunt(Number(button.dataset.cloneHunt)); } finally { setButtonBusy(button, false); }

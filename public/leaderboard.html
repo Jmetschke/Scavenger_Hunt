@@ -10,7 +10,10 @@
     <div class="app-shell narrow">
       <header class="topbar compact">
         <div><p class="eyebrow">Event results</p><h1 id="leaderboard-event-name">Scores</h1></div>
-        <a href="/" class="secondary-button small">Change Event</a>
+        <nav class="top-actions">
+          <button id="copy-event-invitation" class="primary-button small" type="button">Copy Invitation Link</button>
+          <a href="/" class="secondary-button small">Change Event</a>
+        </nav>
       </header>
 
       <nav class="event-navigation" aria-label="Event navigation">
@@ -21,6 +24,7 @@
 
       <main><section class="panel"><div id="leaderboard" class="leaderboard-list" aria-live="polite"><div class="empty-state">Loading scores…</div></div></section></main>
     </div>
+    <script src="/static/invitation.js"></script>
     <script src="/static/leaderboard.js"></script>
   </body>
 </html>

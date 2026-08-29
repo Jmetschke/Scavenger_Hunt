@@ -348,6 +348,10 @@ changeTeamButton.addEventListener('click', () => {
   teamNameInput.focus();
 });
 
+document.getElementById('copy-event-invitation').addEventListener('click', (event) => {
+  copyEventInvitationLink(currentEventId, event.currentTarget);
+});
+
 cameraInput.addEventListener('change', () => selectSubmissionImage(cameraInput, imageInput));
 imageInput.addEventListener('change', () => selectSubmissionImage(imageInput, cameraInput));
 document.querySelectorAll('[data-close-modal="true"]').forEach((button) => button.addEventListener('click', () => {

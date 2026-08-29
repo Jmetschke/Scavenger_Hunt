@@ -33,6 +33,9 @@ async function initializeGallery() {
   const eventId = eventIdFromPath();
   if (!eventId) return window.location.replace('/');
   configureNavigation(eventId);
+  document.getElementById('copy-event-invitation').addEventListener('click', (event) => {
+    copyEventInvitationLink(eventId, event.currentTarget);
+  });
 
   try {
     const [event, result] = await Promise.all([
