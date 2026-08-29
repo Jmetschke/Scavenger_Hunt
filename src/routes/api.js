@@ -1,10 +1,16 @@
 const express = require('express');
-const crypto = require('crypto');
 const multer = require('multer');
 const { getClient, getDatabaseStatus } = require('../db');
 const { hasCloudinaryConfig, uploadImageToCloudinary, deleteCloudinaryImage } = require('../cloudinary');
 const { optimizeImage } = require('../image-processing');
 const { createChallengeTemplate, parseChallengeTemplate } = require('../challenge-template');
+const {
+  grantEventAccess,
+  hashEventPasscode,
+  hasEventAccess,
+  isLegacyPasscodeHash,
+  verifyEventPasscode,
+} = require('../event-access');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -66,14 +72,6 @@ function parseBoolean(value) {
   return false;
 }
 
-function hashHuntPasscode(value) {
-  return crypto.createHash('sha256').update(String(value || '')).digest('hex');
-}
-
-function getHuntPasscode(req) {
-  return req.get('x-hunt-passcode') || req.query.passcode || req.body?.passcode || '';
-}
-
 async function requireHuntAccess(req, res, huntId) {
   const client = getClient();
   const result = await client.execute({
@@ -85,8 +83,8 @@ async function requireHuntAccess(req, res, huntId) {
     return false;
   }
   const expected = result.rows[0].passcode_hash;
-  if (expected && hashHuntPasscode(getHuntPasscode(req)) !== expected) {
-    res.status(401).json({ error: 'This event requires a passcode.', requiresPasscode: true });
+  if (expected && !hasEventAccess(req, huntId)) {
+    res.status(401).json({ error: 'Event access required.', requiresPasscode: true, eventId: Number(huntId) });
     return false;
   }
   return true;
@@ -189,6 +187,58 @@ function createApiRouter() {
     } catch (error) {
       console.error('Hunt fetch failed:', error);
       return res.status(500).json({ error: 'Failed to load scavenger hunts.' });
+    }
+  });
+
+  router.post('/api/events/:eventId/access', async (req, res) => {
+    const eventId = Number(req.params.eventId);
+    if (!Number.isInteger(eventId) || eventId <= 0) {
+      return res.status(400).json({ error: 'Invalid event ID.' });
+    }
+
+    try {
+      const client = getClient();
+      const result = await client.execute({
+        sql: 'SELECT id, passcode_hash FROM hunts WHERE id = ? AND active = 1',
+        args: [eventId],
+      });
+      if (!result.rows.length) return res.status(404).json({ error: 'Event not found.' });
+
+      const storedHash = result.rows[0].passcode_hash;
+      if (storedHash && !verifyEventPasscode(req.body?.passcode, storedHash)) {
+        return res.status(401).json({ error: 'Incorrect event access code.' });
+      }
+
+      if (storedHash && isLegacyPasscodeHash(storedHash)) {
+        await client.execute({
+          sql: 'UPDATE hunts SET passcode_hash = ? WHERE id = ? AND passcode_hash = ?',
+          args: [hashEventPasscode(req.body.passcode), eventId, storedHash],
+        });
+      }
+
+      grantEventAccess(req, res, eventId);
+      return res.json({ success: true, eventId });
+    } catch (error) {
+      console.error('Event access failed:', error);
+      return res.status(500).json({ error: 'Unable to enter this event right now.' });
+    }
+  });
+
+  router.get('/api/events/:eventId', async (req, res) => {
+    const eventId = Number(req.params.eventId);
+    if (!Number.isInteger(eventId) || eventId <= 0) return res.status(400).json({ error: 'Invalid event ID.' });
+    if (!await requireHuntAccess(req, res, eventId)) return;
+
+    try {
+      const result = await getClient().execute({
+        sql: 'SELECT * FROM hunts WHERE id = ? AND active = 1',
+        args: [eventId],
+      });
+      if (!result.rows.length) return res.status(404).json({ error: 'Event not found.' });
+      return res.json(mapHunt(result.rows[0]));
+    } catch (error) {
+      console.error('Event fetch failed:', error);
+      return res.status(500).json({ error: 'Unable to load this event.' });
     }
   });
 
@@ -307,7 +357,7 @@ function createApiRouter() {
       }
       const result = await client.execute({
         sql: 'INSERT INTO hunts (name, description, default_points, passcode_hash, access_link, welcome_image_url, welcome_image_public_id, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        args: [name, description, defaultPoints, passcode ? hashHuntPasscode(passcode) : null, accessLink || null, welcomeImage?.image_url || null, welcomeImage?.cloudinary_public_id || null, active ? 1 : 0],
+        args: [name, description, defaultPoints, passcode ? hashEventPasscode(passcode) : null, accessLink || null, welcomeImage?.image_url || null, welcomeImage?.cloudinary_public_id || null, active ? 1 : 0],
       });
       return res.status(201).json({ success: true, id: Number(result.lastInsertRowid) });
     } catch (error) {
@@ -421,7 +471,7 @@ function createApiRouter() {
       await client.execute({
         sql: `UPDATE hunts SET name = ?, description = ?, default_points = ?, access_link = ?, active = ?${passcode || clearPasscode ? ', passcode_hash = ?' : ''} WHERE id = ?`,
         args: passcode || clearPasscode
-          ? [name, description, defaultPoints, accessLink || null, active ? 1 : 0, passcode ? hashHuntPasscode(passcode) : null, huntId]
+          ? [name, description, defaultPoints, accessLink || null, active ? 1 : 0, passcode ? hashEventPasscode(passcode) : null, huntId]
           : [name, description, defaultPoints, accessLink || null, active ? 1 : 0, huntId],
       });
       if (imageUpdate) {

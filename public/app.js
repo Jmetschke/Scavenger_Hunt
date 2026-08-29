@@ -1,9 +1,13 @@
-const TEAM_KEY = 'festival-team-name';
-const HUNT_KEY = 'festival-hunt-id';
-const HUNT_PASSCODE_KEY = 'festival-hunt-passcodes';
+const LEGACY_TEAM_KEY = 'festival-team-name';
+const entryScreen = document.getElementById('event-entry-screen');
+const eventApp = document.getElementById('event-app');
+const eventPickerForm = document.getElementById('event-picker-form');
+const eventPickerSelect = document.getElementById('event-picker-select');
+const eventCodeGroup = document.getElementById('event-code-group');
+const eventCodeInput = document.getElementById('event-code-input');
+const eventAccessLink = document.getElementById('event-access-link');
+const eventEntryStatus = document.getElementById('event-entry-status');
 const challengeList = document.getElementById('challenge-list');
-const huntSelect = document.getElementById('hunt-select');
-const huntDescription = document.getElementById('hunt-description');
 const huntAccessLink = document.getElementById('hunt-access-link');
 const teamNameInput = document.getElementById('team-name-input');
 const saveTeamButton = document.getElementById('save-team-button');
@@ -29,155 +33,31 @@ const scoreCompleted = document.getElementById('score-completed');
 const eventWelcomeImage = document.getElementById('event-welcome-image');
 const eventWelcomeName = document.getElementById('event-welcome-name');
 const eventWelcomeDescription = document.getElementById('event-welcome-description');
-const eventPickerModal = document.getElementById('event-picker-modal');
-const eventPickerForm = document.getElementById('event-picker-form');
-const eventPickerSelect = document.getElementById('event-picker-select');
 
-let currentHuntId = null;
-let availableHunts = [];
+let currentEventId = null;
+let availableEvents = [];
 let scoreRefreshTimer = null;
-let shouldPromptForHunt = false;
-let huntRequestInProgress = false;
 let selectedImageFile = null;
 
-function getStoredPasscodes() {
-  try {
-    return JSON.parse(localStorage.getItem(HUNT_PASSCODE_KEY) || '{}');
-  } catch (error) {
-    return {};
-  }
+function eventIdFromPath() {
+  const match = window.location.pathname.match(/^\/event\/(\d+)\/?$/);
+  return match ? Number(match[1]) : null;
 }
 
-function getHuntHeaders() {
-  const passcode = getStoredPasscodes()[currentHuntId];
-  return passcode ? { 'X-Hunt-Passcode': passcode } : {};
-}
-
-async function requestHuntAccess(hunt) {
-  if (!hunt.requires_passcode || getStoredPasscodes()[hunt.id]) return true;
-  const passcode = window.prompt(`Enter the passcode for ${hunt.name}:`);
-  if (!passcode) return false;
-  const stored = getStoredPasscodes();
-  stored[hunt.id] = passcode.trim();
-  localStorage.setItem(HUNT_PASSCODE_KEY, JSON.stringify(stored));
-  return true;
-}
-
-function getStoredHuntId() {
-  const stored = Number(localStorage.getItem(HUNT_KEY));
-  return Number.isInteger(stored) && stored > 0 ? stored : null;
-}
-
-async function loadHunts() {
-  const response = await fetch('/api/hunts');
-  if (!response.ok) throw new Error('Unable to load scavenger hunts right now.');
-  availableHunts = await response.json();
-  if (!availableHunts.length) throw new Error('No scavenger hunts have been created yet.');
-
-  const storedId = getStoredHuntId();
-  shouldPromptForHunt = !storedId;
-  const selected = availableHunts.find((hunt) => hunt.id === storedId) || availableHunts.find((hunt) => hunt.active) || availableHunts[0];
-  currentHuntId = selected.id;
-  huntSelect.disabled = true;
-  eventPickerSelect.disabled = true;
-  localStorage.setItem(HUNT_KEY, String(currentHuntId));
-  huntSelect.innerHTML = availableHunts.map((hunt) => `<option value="${hunt.id}">${hunt.name}${hunt.active ? '' : ' (inactive)'}</option>`).join('');
-  eventPickerSelect.innerHTML = availableHunts.map((hunt) => `<option value="${hunt.id}">${hunt.name}</option>`).join('');
-  huntSelect.value = String(currentHuntId);
-  eventPickerSelect.value = String(currentHuntId);
-  huntDescription.textContent = selected.description || '';
-  updateHuntWelcome(selected);
-  updateHuntAccessLink(selected);
-  if (!shouldPromptForHunt && selected.requires_passcode && !await requestHuntAccess(selected)) {
-    throw new Error('Enter the event passcode to view this hunt.');
-  }
-}
-
-function updateHuntWelcome(hunt) {
-  eventWelcomeName.textContent = hunt?.name || 'Choose an event';
-  eventWelcomeDescription.textContent = hunt?.description || '';
-  eventWelcomeImage.src = hunt?.welcome_image_url || '';
-  eventWelcomeImage.alt = hunt?.name ? `${hunt.name} welcome banner` : '';
-  eventWelcomeImage.classList.toggle('hidden', !hunt?.welcome_image_url);
-}
-
-async function activateHunt(huntId) {
-  if (huntRequestInProgress) return false;
-  const selected = availableHunts.find((hunt) => hunt.id === huntId);
-  if (!selected) return false;
-  huntRequestInProgress = true;
-  currentHuntId = selected.id;
-  localStorage.setItem(HUNT_KEY, String(currentHuntId));
-  huntSelect.value = String(currentHuntId);
-  eventPickerSelect.value = String(currentHuntId);
-  huntDescription.textContent = selected.description || '';
-  updateHuntWelcome(selected);
-  updateHuntAccessLink(selected);
-  try {
-    if (!await requestHuntAccess(selected)) {
-      challengeList.innerHTML = '<div class="empty-state">Enter the event passcode to view this hunt.</div>';
-      return false;
-    }
-    await Promise.all([loadChallenges(), loadTeamScore()]);
-    return true;
-  } finally {
-    huntSelect.disabled = false;
-    eventPickerSelect.disabled = false;
-    huntRequestInProgress = false;
-  }
-}
-
-function syncTeamBanner() {
-  const teamName = getStoredTeamName();
-  if (!teamName) {
-    teamBanner.classList.add('hidden');
-    teamBannerName.textContent = 'No team saved';
-    return;
-  }
-
-  teamBannerName.textContent = teamName;
-  teamBanner.classList.remove('hidden');
-}
-
-function setTeamName(name) {
-  const cleaned = String(name || '').trim();
-  localStorage.setItem(TEAM_KEY, cleaned || '');
-  teamNameInput.value = cleaned;
-  teamNameForm.value = cleaned;
-  syncTeamBanner();
-  return cleaned;
+function teamStorageKey() {
+  return `festival-team-name:${currentEventId}`;
 }
 
 function getStoredTeamName() {
-  return localStorage.getItem(TEAM_KEY) || '';
+  if (!currentEventId) return '';
+  return localStorage.getItem(teamStorageKey()) || localStorage.getItem(LEGACY_TEAM_KEY) || '';
 }
 
-async function loadTeamScore() {
-  const teamName = getStoredTeamName();
-  if (!currentHuntId || !teamName) {
-    scoreTeamName.textContent = 'Enter a team name';
-    scoreTotal.textContent = '0';
-    scoreCompleted.textContent = '0 challenges completed';
-    return;
-  }
-
-  try {
-    const response = await fetch(`/api/hunts/${currentHuntId}/teams/score?team_name=${encodeURIComponent(teamName)}`, { headers: getHuntHeaders() });
-    if (!response.ok) throw new Error('Score unavailable');
-    const score = await response.json();
-    scoreTeamName.textContent = score.teamName || teamName;
-    scoreTotal.textContent = String(score.totalPoints || 0);
-    scoreCompleted.textContent = `${score.completedChallenges || 0} challenges completed`;
-  } catch (error) {
-    scoreTeamName.textContent = teamName;
-    scoreTotal.textContent = '0';
-    scoreCompleted.textContent = 'Score unavailable';
-  }
-}
-
-function queueTeamScoreRefresh() {
-  window.clearTimeout(scoreRefreshTimer);
-  scoreRefreshTimer = window.setTimeout(loadTeamScore, 250);
+function setStoredTeamName(name) {
+  const cleaned = String(name || '').trim();
+  if (cleaned) localStorage.setItem(teamStorageKey(), cleaned);
+  else localStorage.removeItem(teamStorageKey());
+  return cleaned;
 }
 
 function showStatus(element, message, type = '') {
@@ -196,16 +76,118 @@ function setButtonBusy(button, busy, busyLabel = 'Working...') {
     button.dataset.defaultLabel = button.textContent;
     button.disabled = true;
     button.textContent = busyLabel;
-    return;
+  } else {
+    button.disabled = false;
+    button.textContent = button.dataset.defaultLabel || button.textContent;
   }
-  button.disabled = false;
-  button.textContent = button.dataset.defaultLabel || button.textContent;
 }
 
-function updateHuntAccessLink(hunt) {
-  huntAccessLink.href = hunt?.access_link || '#';
-  huntAccessLink.classList.toggle('hidden', !hunt?.access_link);
-  huntAccessLink.textContent = hunt?.requires_passcode ? 'Where to find the event passcode' : 'Open event information';
+async function readJson(response) {
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(result.error || 'The request could not be completed.');
+    error.status = response.status;
+    error.details = result;
+    throw error;
+  }
+  return result;
+}
+
+function selectedEntryEvent() {
+  return availableEvents.find((event) => event.id === Number(eventPickerSelect.value));
+}
+
+function updateEntryFields() {
+  const event = selectedEntryEvent();
+  const requiresCode = Boolean(event?.requires_passcode);
+  eventCodeGroup.classList.toggle('hidden', !requiresCode);
+  eventCodeInput.required = requiresCode;
+  eventCodeInput.value = '';
+  eventAccessLink.href = event?.access_link || '#';
+  eventAccessLink.classList.toggle('hidden', !requiresCode || !event?.access_link);
+  hideStatus(eventEntryStatus);
+}
+
+async function loadEventList(preferredId = null) {
+  availableEvents = await readJson(await fetch('/api/hunts'));
+  if (!availableEvents.length) throw new Error('No active events are available right now.');
+  eventPickerSelect.innerHTML = availableEvents.map((event) => `<option value="${event.id}">${event.name}</option>`).join('');
+  const selected = availableEvents.find((event) => event.id === preferredId) || availableEvents[0];
+  eventPickerSelect.value = String(selected.id);
+  eventPickerSelect.disabled = Boolean(preferredId && availableEvents.some((event) => event.id === preferredId));
+  updateEntryFields();
+}
+
+function showEntryScreen() {
+  eventApp.classList.add('hidden');
+  entryScreen.classList.remove('hidden');
+}
+
+function configureEventNavigation(eventId) {
+  document.getElementById('event-hunt-link').href = `/event/${eventId}`;
+  document.getElementById('event-gallery-link').href = `/event/${eventId}/gallery`;
+  document.getElementById('event-scores-link').href = `/event/${eventId}/leaderboard`;
+}
+
+function syncTeamDisplay() {
+  const teamName = getStoredTeamName();
+  teamNameInput.value = teamName;
+  teamNameForm.value = teamName;
+  teamBannerName.textContent = teamName || 'No team saved';
+  teamBanner.classList.toggle('hidden', !teamName);
+}
+
+function updateEventHeader(event) {
+  eventWelcomeName.textContent = event.name;
+  eventWelcomeDescription.textContent = event.description || '';
+  eventWelcomeImage.src = event.welcome_image_url || '';
+  eventWelcomeImage.alt = event.welcome_image_url ? `${event.name} welcome banner` : '';
+  eventWelcomeImage.classList.toggle('hidden', !event.welcome_image_url);
+  huntAccessLink.href = event.access_link || '#';
+  huntAccessLink.classList.toggle('hidden', !event.access_link);
+}
+
+async function loadCurrentEvent() {
+  const response = await fetch(`/api/events/${currentEventId}`);
+  if (response.status === 401) {
+    await loadEventList(currentEventId);
+    showEntryScreen();
+    return false;
+  }
+  const event = await readJson(response);
+  configureEventNavigation(currentEventId);
+  updateEventHeader(event);
+  syncTeamDisplay();
+  entryScreen.classList.add('hidden');
+  eventApp.classList.remove('hidden');
+  await Promise.all([loadChallenges(), loadTeamScore()]);
+  return true;
+}
+
+async function loadTeamScore() {
+  const teamName = getStoredTeamName();
+  if (!teamName) {
+    scoreTeamName.textContent = 'Enter a team name';
+    scoreTotal.textContent = '0';
+    scoreCompleted.textContent = '0 challenges completed';
+    return;
+  }
+
+  try {
+    const score = await readJson(await fetch(`/api/hunts/${currentEventId}/teams/score?team_name=${encodeURIComponent(teamName)}`));
+    scoreTeamName.textContent = score.teamName || teamName;
+    scoreTotal.textContent = String(score.totalPoints || 0);
+    scoreCompleted.textContent = `${score.completedChallenges || 0} challenges completed`;
+  } catch (error) {
+    scoreTeamName.textContent = teamName;
+    scoreTotal.textContent = '0';
+    scoreCompleted.textContent = error.status === 401 ? 'Event access required' : 'Score unavailable';
+  }
+}
+
+function queueTeamScoreRefresh() {
+  window.clearTimeout(scoreRefreshTimer);
+  scoreRefreshTimer = window.setTimeout(loadTeamScore, 250);
 }
 
 function openModal(modal) {
@@ -218,37 +200,14 @@ function closeModal(modal) {
   modal.setAttribute('aria-hidden', 'true');
 }
 
-function bindModalClosers() {
-  document.querySelectorAll('[data-close-modal="true"]').forEach((button) => {
-    button.addEventListener('click', () => {
-      closeModal(submissionModal);
-      closeModal(entriesModal);
-    });
-  });
+function formatDisplayDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Recently' : date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-function formatDisplayDate(dateString) {
-  if (!dateString) return 'Recently';
-  const date = new Date(dateString);
-  if (Number.isNaN(date.getTime())) return dateString;
-  return date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-}
-
-async function loadChallenges(retry = true) {
+async function loadChallenges() {
   try {
-    const response = await fetch(`/api/challenges?hunt_id=${currentHuntId}`, { headers: getHuntHeaders() });
-    if (response.status === 401) {
-      const stored = getStoredPasscodes();
-      delete stored[currentHuntId];
-      localStorage.setItem(HUNT_PASSCODE_KEY, JSON.stringify(stored));
-      const hunt = availableHunts.find((item) => item.id === currentHuntId);
-      if (hunt && retry && await requestHuntAccess(hunt)) return loadChallenges(false);
-    }
-    if (!response.ok) {
-      throw new Error('Unable to load challenges right now.');
-    }
-
-    const challenges = await response.json();
+    const challenges = await readJson(await fetch(`/api/challenges?hunt_id=${currentEventId}`));
     if (!challenges.length) {
       challengeList.innerHTML = '<div class="empty-state">No challenges are live right now. Check back soon.</div>';
       return;
@@ -256,15 +215,10 @@ async function loadChallenges(retry = true) {
 
     challengeList.innerHTML = challenges.map((challenge) => `
       <article class="challenge-card">
-        <div class="challenge-header">
-          <div class="challenge-number">#${challenge.sort_order || challenge.id}</div>
-          <span class="challenge-points">${challenge.points} POINTS</span>
-        </div>
+        <div class="challenge-header"><div class="challenge-number">#${challenge.sort_order || challenge.id}</div><span class="challenge-points">${challenge.points} POINTS</span></div>
         <h2 class="challenge-title">${challenge.title}</h2>
         <p class="challenge-description">${challenge.description || 'Capture a memorable moment.'}</p>
-        <div class="challenge-metrics">
-          <span>${challenge.submission_count} entries</span>
-        </div>
+        <div class="challenge-metrics"><span>${challenge.submission_count} entries</span></div>
         <div class="challenge-actions">
           <button class="primary-button" type="button" data-submit-challenge="${challenge.id}">Submit Photo</button>
           <button class="secondary-button" type="button" data-view-challenge="${challenge.id}">View Entries</button>
@@ -272,41 +226,24 @@ async function loadChallenges(retry = true) {
       </article>
     `).join('');
 
-    challengeList.querySelectorAll('[data-submit-challenge]').forEach((button) => {
-      button.addEventListener('click', async () => {
-        setButtonBusy(button, true, 'Loading...');
-        try {
-          await openSubmitModal(Number(button.dataset.submitChallenge));
-        } finally {
-          setButtonBusy(button, false);
-        }
-      });
-    });
-
-    challengeList.querySelectorAll('[data-view-challenge]').forEach((button) => {
-      button.addEventListener('click', async () => {
-        setButtonBusy(button, true, 'Loading...');
-        try {
-          await openEntriesModal(Number(button.dataset.viewChallenge));
-        } finally {
-          setButtonBusy(button, false);
-        }
-      });
-    });
+    challengeList.querySelectorAll('[data-submit-challenge]').forEach((button) => button.addEventListener('click', () => openSubmitModal(Number(button.dataset.submitChallenge), button)));
+    challengeList.querySelectorAll('[data-view-challenge]').forEach((button) => button.addEventListener('click', () => openEntriesModal(Number(button.dataset.viewChallenge), button)));
   } catch (error) {
-    challengeList.innerHTML = `<div class="empty-state">${error.message || 'Challenge data is unavailable.'}</div>`;
+    if (error.status === 401) window.location.assign(`/event/${currentEventId}`);
+    else challengeList.innerHTML = `<div class="empty-state">${error.message}</div>`;
   }
 }
 
-async function openSubmitModal(challengeId) {
-  try {
-    const response = await fetch(`/api/challenges?hunt_id=${currentHuntId}`, { headers: getHuntHeaders() });
-    const challenges = await response.json();
-    const challenge = challenges.find((item) => Number(item.id) === challengeId);
-    if (!challenge) {
-      throw new Error('Challenge not found.');
-    }
+async function getChallenge(challengeId) {
+  const challenges = await readJson(await fetch(`/api/challenges?hunt_id=${currentEventId}`));
+  return challenges.find((challenge) => Number(challenge.id) === challengeId);
+}
 
+async function openSubmitModal(challengeId, button) {
+  setButtonBusy(button, true, 'Loading...');
+  try {
+    const challenge = await getChallenge(challengeId);
+    if (!challenge) throw new Error('Challenge not found.');
     challengeIdInput.value = String(challenge.id);
     challengeNameEl.textContent = challenge.title;
     teamNameForm.value = getStoredTeamName();
@@ -318,62 +255,37 @@ async function openSubmitModal(challengeId) {
     previewImage.src = '';
     openModal(submissionModal);
   } catch (error) {
-    showStatus(uploadStatus, error.message || 'Unable to open the submission form.', 'error');
+    showStatus(uploadStatus, error.message, 'error');
     openModal(submissionModal);
+  } finally {
+    setButtonBusy(button, false);
   }
 }
 
-async function openEntriesModal(challengeId) {
+async function openEntriesModal(challengeId, button) {
+  setButtonBusy(button, true, 'Loading...');
   try {
-    const response = await fetch(`/api/challenges/${challengeId}/submissions?hunt_id=${currentHuntId}`, { headers: getHuntHeaders() });
-    if (!response.ok) {
-      throw new Error('Entries could not be loaded.');
-    }
-
-    const result = await response.json();
+    const result = await readJson(await fetch(`/api/challenges/${challengeId}/submissions?hunt_id=${currentEventId}`));
     const entries = result.submissions || [];
-
-    if (!entries.length) {
-      entriesContent.innerHTML = '<div class="empty-state">No entries yet for this challenge.</div>';
-      openModal(entriesModal);
-      return;
-    }
-
-    entriesContent.innerHTML = entries.map((entry) => `
+    entriesContent.innerHTML = entries.length ? entries.map((entry) => `
       <article class="entry-card">
         <img src="${entry.image_url}" alt="${entry.team_name} submission" data-large-image="${entry.image_url}" />
-        <div class="entry-meta">
-          <strong>${entry.team_name}</strong>
-          ${entry.caption ? `<p>${entry.caption}</p>` : '<p>No caption added.</p>'}
-          ${entry.comment ? `<p><strong>Comment:</strong> ${entry.comment}</p>` : ''}
-          <small>${formatDisplayDate(entry.submitted_at)}</small>
-        </div>
+        <div class="entry-meta"><strong>${entry.team_name}</strong>${entry.caption ? `<p>${entry.caption}</p>` : '<p>No caption added.</p>'}${entry.comment ? `<p><strong>Comment:</strong> ${entry.comment}</p>` : ''}<small>${formatDisplayDate(entry.submitted_at)}</small></div>
       </article>
-    `).join('');
-
-    entriesContent.querySelectorAll('img').forEach((img) => {
-      img.addEventListener('click', () => {
-        const viewer = window.open(img.dataset.largeImage, '_blank');
-        if (viewer) viewer.focus();
-      });
-    });
-
+    `).join('') : '<div class="empty-state">No entries yet for this challenge.</div>';
+    entriesContent.querySelectorAll('[data-large-image]').forEach((image) => image.addEventListener('click', () => window.open(image.dataset.largeImage, '_blank')));
     openModal(entriesModal);
   } catch (error) {
-    entriesContent.innerHTML = `<div class="empty-state">${error.message || 'Entries are unavailable right now.'}</div>`;
+    entriesContent.innerHTML = `<div class="empty-state">${error.message}</div>`;
     openModal(entriesModal);
+  } finally {
+    setButtonBusy(button, false);
   }
 }
 
 function selectSubmissionImage(input, otherInput) {
-  const file = input.files && input.files[0];
-  if (!file) {
-    selectedImageFile = null;
-    imagePreview.classList.add('hidden');
-    previewImage.src = '';
-    return;
-  }
-
+  const file = input.files?.[0];
+  if (!file) return;
   selectedImageFile = file;
   otherInput.value = '';
   hideStatus(uploadStatus);
@@ -385,156 +297,108 @@ function selectSubmissionImage(input, otherInput) {
   reader.readAsDataURL(file);
 }
 
-cameraInput.addEventListener('change', () => selectSubmissionImage(cameraInput, imageInput));
-imageInput.addEventListener('change', () => selectSubmissionImage(imageInput, cameraInput));
+eventPickerSelect.addEventListener('change', updateEntryFields);
+eventPickerForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const selected = selectedEntryEvent();
+  if (!selected) return;
+  const button = eventPickerForm.querySelector('button[type="submit"]');
+  setButtonBusy(button, true, 'Entering...');
+  try {
+    await readJson(await fetch(`/api/events/${selected.id}/access`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passcode: eventCodeInput.value }),
+    }));
+    window.location.assign(`/event/${selected.id}`);
+  } catch (error) {
+    showStatus(eventEntryStatus, error.message, 'error');
+    eventCodeInput.focus();
+  } finally {
+    setButtonBusy(button, false);
+  }
+});
 
 saveTeamButton.addEventListener('click', () => {
-  const newName = teamNameInput.value.trim();
-  if (!newName) {
-    alert('Please enter a team or name first.');
-    return;
-  }
-
-  setTeamName(newName);
+  const name = setStoredTeamName(teamNameInput.value);
+  teamNameInput.value = name;
+  teamNameForm.value = name;
+  syncTeamDisplay();
   loadTeamScore();
-  teamNameInput.value = newName;
-  teamNameForm.value = newName;
 });
 
 teamNameInput.addEventListener('input', () => {
-  const currentValue = teamNameInput.value.trim();
-  if (!currentValue) {
-    localStorage.removeItem(TEAM_KEY);
-    teamNameForm.value = '';
-    queueTeamScoreRefresh();
-    return;
-  }
-
-  setTeamName(currentValue);
+  setStoredTeamName(teamNameInput.value);
+  teamNameForm.value = teamNameInput.value.trim();
+  syncTeamDisplay();
   queueTeamScoreRefresh();
 });
 
 teamNameForm.addEventListener('input', () => {
-  const currentValue = teamNameForm.value.trim();
-  if (!currentValue) {
-    localStorage.removeItem(TEAM_KEY);
-    teamNameInput.value = '';
-    queueTeamScoreRefresh();
-    return;
-  }
-
-  setTeamName(currentValue);
+  setStoredTeamName(teamNameForm.value);
+  teamNameInput.value = teamNameForm.value.trim();
+  syncTeamDisplay();
   queueTeamScoreRefresh();
 });
 
 changeTeamButton.addEventListener('click', () => {
-  localStorage.removeItem(TEAM_KEY);
-  teamNameInput.value = '';
-  teamNameForm.value = '';
-  syncTeamBanner();
+  setStoredTeamName('');
+  syncTeamDisplay();
   loadTeamScore();
   teamNameInput.focus();
 });
 
+cameraInput.addEventListener('change', () => selectSubmissionImage(cameraInput, imageInput));
+imageInput.addEventListener('change', () => selectSubmissionImage(imageInput, cameraInput));
+document.querySelectorAll('[data-close-modal="true"]').forEach((button) => button.addEventListener('click', () => {
+  closeModal(submissionModal);
+  closeModal(entriesModal);
+}));
+
 submissionForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-
-  const file = selectedImageFile;
   const teamName = teamNameForm.value.trim();
-  const caption = document.getElementById('caption-input').value.trim();
-  const comment = document.getElementById('comment-input').value.trim();
-  const challengeId = challengeIdInput.value;
+  if (!teamName) return showStatus(uploadStatus, 'Please enter a team or name.', 'error');
+  if (!selectedImageFile) return showStatus(uploadStatus, 'Please choose an image before submitting.', 'error');
 
-  if (!challengeId) {
-    showStatus(uploadStatus, 'Please choose a challenge first.', 'error');
-    return;
-  }
-
-  if (!teamName) {
-    showStatus(uploadStatus, 'Please enter a team or name.', 'error');
-    return;
-  }
-
-  if (!file) {
-    showStatus(uploadStatus, 'Please choose an image before submitting.', 'error');
-    return;
-  }
-
-  setTeamName(teamName);
+  setStoredTeamName(teamName);
   showStatus(uploadStatus, 'Uploading your photo...', '');
-  submitEntryButton.disabled = true;
-  submitEntryButton.textContent = 'Uploading...';
-
-  const formData = new FormData();
-  formData.append('challenge_id', challengeId);
-  formData.append('hunt_id', String(currentHuntId));
-  formData.append('team_name', teamName);
-  formData.append('caption', caption);
-  formData.append('comment', comment);
-  formData.append('image', file);
+  setButtonBusy(submitEntryButton, true, 'Uploading...');
+  const formData = new FormData(submissionForm);
+  formData.set('hunt_id', String(currentEventId));
+  formData.set('image', selectedImageFile);
 
   try {
-    const response = await fetch('/api/submissions', {
-      method: 'POST',
-      headers: getHuntHeaders(),
-      body: formData,
-    });
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      throw new Error(result.error || 'Upload failed. Try again.');
-    }
-
-    const awardedPoints = Number(result.submission?.points_awarded || 0);
-    showStatus(uploadStatus, `Upload successful! ${awardedPoints} point${awardedPoints === 1 ? '' : 's'} added.`, 'success');
+    const result = await readJson(await fetch('/api/submissions', { method: 'POST', body: formData }));
+    const points = Number(result.submission?.points_awarded || 0);
+    showStatus(uploadStatus, `Upload successful! ${points} point${points === 1 ? '' : 's'} added.`, 'success');
     submissionForm.reset();
     selectedImageFile = null;
     imagePreview.classList.add('hidden');
-    previewImage.src = '';
     teamNameForm.value = getStoredTeamName();
-    setTimeout(() => {
+    window.setTimeout(() => {
       closeModal(submissionModal);
       loadChallenges();
       loadTeamScore();
     }, 700);
   } catch (error) {
-    showStatus(uploadStatus, error.message || 'Upload failed. Please try again.', 'error');
+    showStatus(uploadStatus, error.message, 'error');
   } finally {
-    submitEntryButton.disabled = false;
-    submitEntryButton.textContent = 'Submit Entry';
+    setButtonBusy(submitEntryButton, false);
   }
 });
 
-window.addEventListener('DOMContentLoaded', () => {
-  const storedTeam = getStoredTeamName();
-  if (storedTeam) {
-    teamNameInput.value = storedTeam;
-    teamNameForm.value = storedTeam;
-  }
-
-  syncTeamBanner();
-  bindModalClosers();
-  loadHunts().then(async () => {
-    if (shouldPromptForHunt) openModal(eventPickerModal);
-    if (!shouldPromptForHunt) await Promise.all([loadChallenges(), loadTeamScore()]);
-  }).catch((error) => {
-    challengeList.innerHTML = `<div class="empty-state">${error.message}</div>`;
-  });
-});
-
-huntSelect.addEventListener('change', () => {
-  activateHunt(Number(huntSelect.value));
-});
-
-eventPickerForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const submitButton = eventPickerForm.querySelector('button[type="submit"]');
-  setButtonBusy(submitButton, true, 'Entering...');
+window.addEventListener('DOMContentLoaded', async () => {
+  currentEventId = eventIdFromPath();
   try {
-    const entered = await activateHunt(Number(eventPickerSelect.value));
-    if (entered) closeModal(eventPickerModal);
-  } finally {
-    setButtonBusy(submitButton, false);
+    if (!currentEventId) {
+      await loadEventList();
+      showEntryScreen();
+      return;
+    }
+    await loadCurrentEvent();
+  } catch (error) {
+    showEntryScreen();
+    showStatus(eventEntryStatus, error.message, 'error');
   }
 });

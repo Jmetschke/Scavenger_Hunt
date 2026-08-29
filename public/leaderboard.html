@@ -3,26 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Leaderboard</title>
+    <title>Scores · Scavengers Hole</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
     <div class="app-shell narrow">
       <header class="topbar compact">
-        <div>
-          <p class="eyebrow">Results</p>
-          <h1>LEADERBOARD</h1>
-        </div>
-        <a href="/" class="secondary-button small">Back</a>
+        <div><p class="eyebrow">Event results</p><h1 id="leaderboard-event-name">Scores</h1></div>
+        <a href="/" class="secondary-button small">Change Event</a>
       </header>
 
-      <main>
-        <section class="panel">
-          <div id="leaderboard" class="leaderboard-list" aria-live="polite"></div>
-        </section>
-      </main>
-    </div>
+      <nav class="event-navigation" aria-label="Event navigation">
+        <a id="event-hunt-link" class="event-nav-link" href="#">Hunt</a>
+        <a id="event-gallery-link" class="event-nav-link" href="#">Gallery</a>
+        <a id="event-scores-link" class="event-nav-link active" href="#">Scores</a>
+      </nav>
 
+      <main><section class="panel"><div id="leaderboard" class="leaderboard-list" aria-live="polite"><div class="empty-state">Loading scores…</div></div></section></main>
+    </div>
     <script src="/static/leaderboard.js"></script>
   </body>
 </html>

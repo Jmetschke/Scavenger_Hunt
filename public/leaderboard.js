@@ -1,37 +1,39 @@
+const container = document.getElementById('leaderboard');
+
+function eventIdFromPath() {
+  const match = window.location.pathname.match(/^\/event\/(\d+)\/leaderboard\/?$/);
+  return match ? Number(match[1]) : null;
+}
+
+async function readJson(response) {
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(result.error || 'Scores are unavailable.');
+    error.status = response.status;
+    throw error;
+  }
+  return result;
+}
+
+function configureNavigation(eventId) {
+  document.getElementById('event-hunt-link').href = `/event/${eventId}`;
+  document.getElementById('event-gallery-link').href = `/event/${eventId}/gallery`;
+  document.getElementById('event-scores-link').href = `/event/${eventId}/leaderboard`;
+}
+
 async function loadLeaderboard() {
-  const container = document.getElementById('leaderboard');
-  const huntId = new URLSearchParams(window.location.search).get('hunt_id') || localStorage.getItem('festival-hunt-id') || '';
-  const passcodes = JSON.parse(localStorage.getItem('festival-hunt-passcodes') || '{}');
+  const eventId = eventIdFromPath();
+  if (!eventId) return window.location.replace('/');
+  configureNavigation(eventId);
 
   try {
-    const huntsResponse = await fetch('/api/hunts');
-    const hunts = await huntsResponse.json();
-    const hunt = hunts.find((item) => String(item.id) === String(huntId)) || hunts[0];
-    const selectedHuntId = hunt ? hunt.id : huntId;
-    if (hunt?.requires_passcode && !passcodes[selectedHuntId]) {
-      const passcode = window.prompt(`Enter the passcode for ${hunt.name}:`);
-      if (!passcode) throw new Error('Enter the event passcode to view the leaderboard.');
-      passcodes[selectedHuntId] = passcode.trim();
-      localStorage.setItem('festival-hunt-passcodes', JSON.stringify(passcodes));
-    }
-    const response = await fetch(`/api/leaderboard?hunt_id=${encodeURIComponent(selectedHuntId)}`, {
-      headers: { 'X-Hunt-Passcode': passcodes[selectedHuntId] || '' },
-    });
-    if (response.status === 401) {
-      delete passcodes[selectedHuntId];
-      localStorage.setItem('festival-hunt-passcodes', JSON.stringify(passcodes));
-      throw new Error('The event passcode was not accepted. Return to the event page and try again.');
-    }
-    if (!response.ok) {
-      throw new Error('Leaderboard is unavailable right now.');
-    }
-
-    const leaderboard = await response.json();
+    const event = await readJson(await fetch(`/api/events/${eventId}`));
+    const leaderboard = await readJson(await fetch(`/api/leaderboard?hunt_id=${eventId}`));
+    document.getElementById('leaderboard-event-name').textContent = `${event.name} Scores`;
     if (!leaderboard.length) {
-      container.innerHTML = '<div class="empty-state">No approved scores yet. Start submitting entries.</div>';
+      container.innerHTML = '<div class="empty-state">No scores yet. Start submitting entries.</div>';
       return;
     }
-
     container.innerHTML = leaderboard.map((entry) => `
       <div class="leaderboard-item">
         <div class="leaderboard-rank">${entry.rank}.</div>
@@ -40,7 +42,8 @@ async function loadLeaderboard() {
       </div>
     `).join('');
   } catch (error) {
-    container.innerHTML = `<div class="empty-state">${error.message || 'Leaderboard is unavailable.'}</div>`;
+    if (error.status === 401) return window.location.replace(`/event/${eventId}`);
+    container.innerHTML = `<div class="empty-state">${error.message}</div>`;
   }
 }
 
